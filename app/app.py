@@ -1095,6 +1095,9 @@ def admin_set_permissions():
 
 @app.errorhandler(403)
 def forbidden(_e):
+    if request.method == "GET" and g.get("user") is not None and request.endpoint != "index":
+        flash(f"That page isn't one of {g.user['name'].split()[0]}'s tools, so here's their home page.")
+        return redirect(url_for("index"))
     return render_template("403.html"), 403
 
 
