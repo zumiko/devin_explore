@@ -149,12 +149,35 @@ def history(entity_type, entity_id):
 
 def pending_approvals_for(user):
     rows = g.db.execute(
-        "SELECT a.*, r.amount_cents, r.reason, r.note, r.requested_by, r.customer_id, c.name AS customer,"
+        "SELECT a.*, r.amount_cents, r.reason, r.note, r.requested_by, r.customer_id, r.created_at, r.risk_json,"
+        " c.name AS customer,"
         " u.name AS requester FROM approvals a JOIN refunds r ON a.entity_type = 'refund' AND r.id = a.entity_id"
         " JOIN customers c ON c.id = r.customer_id JOIN users u ON u.id = r.requested_by"
         " WHERE a.status = 'pending' ORDER BY r.created_at"
     ).fetchall()
     return [r for r in rows if r["required_role"] == user["role"]]
+
+
+def approval_context(rows):
+    now = datetime.now()
+    sla = int(get_setting(g.db, "refund_approval_sla_hours"))
+    auto_max = int(get_setting(g.db, "refund_auto_approve_max_cents"))
+    out = []
+    for a in rows:
+        since = g.db.execute("SELECT MAX(decided_at) FROM approvals WHERE entity_type = 'refund' AND entity_id = ?"
+                             " AND step < ?", (a["entity_id"], a["step"])).fetchone()[0] or a["created_at"]
+        cust = g.db.execute("SELECT COUNT(*), COALESCE(SUM(amount_cents), 0) FROM refunds WHERE customer_id = ?"
+                            " AND id != ? AND status != 'rejected' AND created_at >= ?",
+                            (a["customer_id"], a["entity_id"], (now - timedelta(days=90)).isoformat())).fetchone()
+        agent = g.db.execute("SELECT COUNT(*), COALESCE(SUM(amount_cents), 0), COALESCE(SUM(amount_cents BETWEEN ? AND ?), 0)"
+                             " FROM refunds WHERE requested_by = ? AND created_at >= ?",
+                             (int(auto_max * 0.8), auto_max, a["requested_by"],
+                              (now - timedelta(days=7)).isoformat())).fetchone()
+        hours = (now - datetime.fromisoformat(since)).total_seconds() / 3600
+        out.append(dict(a, risks=json.loads(a["risk_json"] or "[]"), waiting_hours=round(hours), overdue=hours > sla,
+                        cust_count=cust[0], cust_sum=cust[1], agent_count=agent[0], agent_sum=agent[1],
+                        agent_near_limit=agent[2]))
+    return out
 
 
 @app.post("/switch-user")
@@ -728,6 +751,49 @@ def refunds():
     return render_template("refunds.html", refunds=rows, status=status)
 
 
+def agent_auto_today(user_id):
+    return g.db.execute(
+        "SELECT COALESCE(SUM(amount_cents), 0) FROM refunds r WHERE requested_by = ? AND created_at >= ?"
+        " AND NOT EXISTS (SELECT 1 FROM approvals a WHERE a.entity_type = 'refund' AND a.entity_id = r.id)",
+        (user_id, datetime.now().strftime("%Y-%m-%dT00:00:00"))).fetchone()[0]
+
+
+def refund_risks(txn, amount, auto_max):
+    """Reasons a refund needs a lead even though it's under the auto-approve limit."""
+    s = {k: int(get_setting(g.db, k)) for k in (
+        "refund_repeat_max", "refund_max_age_days", "refund_agent_daily_max_cents")}
+    now = datetime.now()
+    risks = []
+    recent = g.db.execute("SELECT COUNT(*) FROM refunds WHERE customer_id = ? AND status != 'rejected'"
+                          " AND created_at >= ?", (txn["customer_id"], (now - timedelta(days=30)).isoformat())).fetchone()[0]
+    if recent >= s["refund_repeat_max"]:
+        risks.append(f"customer's refund #{recent + 1} in 30 days")
+    mine = g.db.execute("SELECT COALESCE(SUM(amount_cents), 0) FROM refunds WHERE transaction_id = ? AND requested_by = ?"
+                        " AND status != 'rejected' AND created_at >= ?",
+                        (txn["id"], g.user["id"], (now - timedelta(hours=24)).isoformat())).fetchone()[0]
+    if mine and mine + amount > auto_max:
+        risks.append(f"together with your {money(mine)} on this charge today it's over the {money(auto_max)} auto-approve limit")
+    kyc = g.db.execute("SELECT status FROM kyc_cases WHERE customer_id = ? ORDER BY id DESC LIMIT 1",
+                       (txn["customer_id"],)).fetchone()
+    if kyc and kyc["status"] != "approved":
+        risks.append(f"customer's identity check is {label(kyc['status']).lower()}")
+    age = (now - datetime.fromisoformat(txn["created_at"])).days
+    if age > s["refund_max_age_days"]:
+        risks.append(f"charge is {age} days old")
+    today = agent_auto_today(g.user["id"])
+    if amount <= auto_max and today + amount > s["refund_agent_daily_max_cents"]:
+        risks.append(f"over your {money(s['refund_agent_daily_max_cents'])} daily limit ({money(today)} used)")
+    return risks
+
+
+def notify_refund(refund_id, template):
+    r = g.db.execute("SELECT r.amount_cents, r.customer_id, t.description FROM refunds r"
+                     " JOIN transactions t ON t.id = r.transaction_id WHERE r.id = ?", (refund_id,)).fetchone()
+    customer = g.db.execute("SELECT * FROM customers WHERE id = ?", (r["customer_id"],)).fetchone()
+    notify.send(g.db, None, customer, template, sent_by=g.get("user") and g.user["id"],
+                amount=money(r["amount_cents"]), description=r["description"])
+
+
 @app.route("/refunds/new/<int:txn_id>", methods=["GET", "POST"])
 def refund_new(txn_id):
     require("refund_request")
@@ -745,7 +811,8 @@ def refund_new(txn_id):
     lead_max = int(get_setting(g.db, "refund_lead_max_cents"))
     if request.method == "GET":
         return render_template("refund_new.html", txn=txn, remaining=remaining, reasons=REFUND_REASONS,
-                               auto_max=auto_max, lead_max=lead_max)
+                               auto_max=auto_max, lead_max=lead_max, used_today=agent_auto_today(g.user["id"]),
+                               daily_max=int(get_setting(g.db, "refund_agent_daily_max_cents")))
 
     try:
         amount = round(float(request.form["amount"]) * 100)
@@ -758,23 +825,28 @@ def refund_new(txn_id):
         return redirect(url_for("refund_new", txn_id=txn_id))
 
     steps = [] if amount <= auto_max else (["support_lead"] if amount <= lead_max else ["support_lead", "finance"])
+    risks = refund_risks(txn, amount, auto_max)
+    if risks and not steps:
+        steps = ["support_lead"]
     status = "sent" if not steps else "pending_approval"
     cur = g.db.execute(
         "INSERT INTO refunds (transaction_id, customer_id, amount_cents, reason, note, status, requested_by,"
-        " created_at, resolved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " created_at, resolved_at, risk_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (txn_id, txn["customer_id"], amount, reason, note, status, g.user["id"], now_iso(),
-         now_iso() if status == "sent" else None),
+         now_iso() if status == "sent" else None, json.dumps(risks) if risks else None),
     )
     rid = cur.lastrowid
     audit(g.db, g.user["id"], "refund_requested", "refund", rid, after={"amount_cents": amount, "reason": reason}, reason=note)
     if steps:
         g.db.execute("INSERT INTO approvals (entity_type, entity_id, step, required_role, status)"
                      " VALUES ('refund', ?, 1, ?, 'pending')", (rid, steps[0]))
-        flash(f"Refund needs approval: {' then '.join(label(s) for s in steps)}.")
+        flash(f"Refund needs approval: {' then '.join(label(s) for s in steps)}."
+              + (f" Why: {'; '.join(risks)}." if risks else ""))
     else:
         audit(g.db, None, "refund_auto_approved", "refund", rid, after={"status": "sent"},
               reason="Under auto-approve threshold")
-        flash("Refund approved automatically and sent.")
+        notify_refund(rid, "refund_sent")
+        flash("Refund approved automatically and sent. The customer has been emailed.")
     g.db.commit()
     return redirect(url_for("refund_detail", refund_id=rid))
 
@@ -795,13 +867,46 @@ def refund_detail(refund_id):
         " WHERE entity_type = 'refund' AND entity_id = ? ORDER BY step",
         (refund_id,),
     ).fetchall()
-    return render_template("refund.html", r=r, approvals=approvals, history=history("refund", refund_id))
+    messages = g.db.execute("SELECT * FROM messages WHERE customer_id = ? AND case_id IS NULL AND created_at >= ?"
+                            " AND (subject LIKE '%refund%' OR body LIKE '%refund%') ORDER BY id",
+                            (r["customer_id"], r["created_at"])).fetchall()
+    return render_template("refund.html", r=r, approvals=approvals, history=history("refund", refund_id),
+                           messages=messages)
 
 
 @app.get("/approvals")
 def approvals():
     require("approvals_view")
-    return render_template("approvals.html", approvals=pending_approvals_for(g.user))
+    return render_template("approvals.html", approvals=approval_context(pending_approvals_for(g.user)),
+                           sla=int(get_setting(g.db, "refund_approval_sla_hours")), auto_max=int(get_setting(
+                               g.db, "refund_auto_approve_max_cents")))
+
+
+@app.get("/refunds/export.csv")
+def refunds_export():
+    require("refund_export")
+    import csv
+    import io
+    start, end = request.args.get("from", ""), request.args.get("to", "")
+    rows = g.db.execute(
+        "SELECT r.id, r.resolved_at, r.created_at, c.id AS customer_id, c.name, r.transaction_id, r.amount_cents,"
+        " r.reason, u.name AS agent FROM refunds r JOIN customers c ON c.id = r.customer_id JOIN users u"
+        " ON u.id = r.requested_by WHERE r.status = 'sent' AND (? = '' OR r.resolved_at >= ?)"
+        " AND (? = '' OR r.resolved_at < date(?, '+1 day')) ORDER BY r.resolved_at", (start, start, end, end)).fetchall()
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["refund_id", "sent_at", "requested_at", "customer_id", "customer", "transaction_id", "amount",
+                "reason", "requested_by", "approved_by"])
+    for r in rows:
+        approvers = ", ".join(x[0] for x in g.db.execute(
+            "SELECT u.name FROM approvals a JOIN users u ON u.id = a.decided_by WHERE a.entity_type = 'refund'"
+            " AND a.entity_id = ? AND a.status = 'approved' ORDER BY step", (r["id"],))) or "auto"
+        w.writerow([r["id"], r["resolved_at"], r["created_at"], r["customer_id"], r["name"], r["transaction_id"],
+                    f"{r['amount_cents'] / 100:.2f}", r["reason"], r["agent"], approvers])
+    audit(g.db, g.user["id"], "refunds_exported", "refund", 0, after={"rows": len(rows), "from": start, "to": end})
+    g.db.commit()
+    return Response(buf.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=refunds_sent.csv"})
 
 
 @app.post("/approvals/<int:approval_id>")
@@ -828,12 +933,14 @@ def approval_decide(approval_id):
     lead_max = int(get_setting(g.db, "refund_lead_max_cents"))
     if decision == "rejected":
         g.db.execute("UPDATE refunds SET status = 'rejected', resolved_at = ? WHERE id = ?", (now_iso(), r["id"]))
+        notify_refund(r["id"], "refund_rejected")
     elif a["step"] == 1 and r["amount_cents"] > lead_max:
         g.db.execute("INSERT INTO approvals (entity_type, entity_id, step, required_role, status)"
                      " VALUES ('refund', ?, 2, 'finance', 'pending')", (r["id"],))
     else:
         g.db.execute("UPDATE refunds SET status = 'sent', resolved_at = ? WHERE id = ?", (now_iso(), r["id"]))
         audit(g.db, None, "refund_sent", "refund", r["id"], after={"status": "sent"}, reason="Payout submitted (simulated)")
+        notify_refund(r["id"], "refund_sent")
     g.db.commit()
     flash(f"Refund #{r['id']} {decision}.")
     return redirect(url_for("approvals"))

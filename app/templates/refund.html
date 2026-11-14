@@ -9,6 +9,7 @@
   <tr><th>Reason</th><td>{{ r.reason|label }}</td></tr>
   <tr><th>Note</th><td>{{ r.note }}</td></tr>
   <tr><th>Requested by</th><td>{{ r.requester }} on {{ r.created_at|dt }}</td></tr>
+  {% if r.risk_json %}<tr><th>Sent for approval because</th><td>{{ r.risk_json|fromjson|join('; ') }}</td></tr>{% endif %}
 </table>
 <h3>Approvals</h3>
 <table>
@@ -17,5 +18,7 @@
   <tr><td>{{ a.step }}</td><td>{{ a.required_role|label }}</td><td>{{ a.status }}</td><td>{{ a.approver or '' }}</td><td>{{ a.decided_at|dt }}</td><td>{{ a.comment or '' }}</td></tr>
   {% else %}<tr><td colspan="6" class="muted">No approval needed (under auto-approve limit)</td></tr>{% endfor %}
 </table>
+{% if messages %}<h3>Sent to the customer</h3>
+<table class="small">{% for m in messages %}<tr><td>{{ m.created_at|dt }}</td><td>{{ m.channel }}</td><td>{{ m.subject or m.body }}</td><td class="muted">{{ m.status }}</td></tr>{% endfor %}</table>{% endif %}
 {% include '_history.html' %}
 {% endblock %}

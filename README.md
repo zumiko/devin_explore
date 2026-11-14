@@ -52,4 +52,6 @@ python app/app.py     # http://localhost:5000
 
 `/requests`: people with `change_request` (leads, finance, PM, seniors) describe a change they need. The admin approves or declines it (`change_approve`). Approval starts a Devin session through the Devin API that opens a PR against `CHANGE_BASE_BRANCH` on `CHANGE_REPO`. An engineer (`change_ship`) reviews and merges it, then marks it live, and the requester confirms it or reopens it. Every step is in the audit log.
 
+Refunds: small refunds are auto-approved unless a risk check trips (repeat customer, split refund, identity check not approved, old charge, agent daily limit); limits are on the Rules page and owned by Finance. Approvers see why, plus customer and agent history; finance can export sent refunds as CSV.
+
 Set `DEVIN_API_KEY` to have approvals start real sessions. A service-user key (`cog_...`) also needs `DEVIN_ORG_ID`. Without it, the request page shows the exact prompt Devin would have received.

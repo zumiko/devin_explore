@@ -2,6 +2,9 @@
 {% block content %}
 <h1>Refunds</h1>
 <p class="muted">To start a refund, find the customer on the <a href="{{ url_for('customers') }}">Customers</a> page and click “Refund” next to the transaction.</p>
+{% if can('refund_export') %}<form method="get" action="{{ url_for('refunds_export') }}" class="row small">
+  <label>Sent from <input type="date" name="from"></label><label>to <input type="date" name="to"></label>
+  <button class="secondary">Export sent refunds (CSV)</button></form>{% endif %}
 <p class="tabs">
   {% for s, name in [('', 'All'), ('pending_approval', 'Waiting approval'), ('sent', 'Sent'), ('rejected', 'Rejected')] %}
   <a href="?status={{ s }}" class="{% if s == status %}active{% endif %}">{{ name }}</a>

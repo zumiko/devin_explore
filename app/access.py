@@ -26,6 +26,7 @@ PERMISSIONS = {
     "customer_pii": ("Customers", "See personal details: date of birth, address, SSN last 4", KYC_ROLES),
     "refund_view": ("Refunds", "See refunds", {"support_agent", "support_lead", "finance", "admin"}),
     "refund_request": ("Refunds", "Issue refunds", {"support_agent", "support_lead"}),
+    "refund_export": ("Refunds", "Export sent refunds (CSV) for reconciliation", {"support_lead", "finance"}),
     "approvals_view": ("Refunds", "Approve refunds above the limit", {"support_lead", "finance"}),
     "refund_dashboard": ("Refunds", "Refund dashboard", {"support_lead", "finance", "pm", "admin"}),
     "flag_view": ("Feature flags", "See feature flags", {"pm", "engineer", "admin"}),

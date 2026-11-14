@@ -96,7 +96,8 @@ CREATE TABLE IF NOT EXISTS refunds (
   status TEXT NOT NULL,
   requested_by INTEGER NOT NULL REFERENCES users(id),
   created_at TEXT NOT NULL,
-  resolved_at TEXT
+  resolved_at TEXT,
+  risk_json TEXT
 );
 
 CREATE TABLE IF NOT EXISTS approvals (

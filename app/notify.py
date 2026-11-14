@@ -43,6 +43,14 @@ TEMPLATES = {
                  "Hi {first},\n\nWe're unable to open an AcmePay account for you at this time. "
                  "If you have questions, reply to this email." + SIGN,
                  None),
+    "refund_sent": ("Your AcmePay refund of {amount} is on its way",
+                    "Hi {first},\n\nWe've refunded {amount} for {description}. It usually reaches your account in "
+                    "3 to 5 business days." + SIGN,
+                    "AcmePay: we've refunded {amount}. Allow 3-5 business days."),
+    "refund_rejected": ("Update on your AcmePay refund request",
+                        "Hi {first},\n\nWe looked into your refund request for {description} and can't refund it "
+                        "this time. Reply to this email if you'd like to talk it through." + SIGN,
+                        None),
     "call_invite": ("Invitation: AcmePay verification call, {when}",
                     "Hi {first},\n\nWe'd like a quick video call to finish verifying your identity.\n\nWhen: {when} ({minutes} min)\n"
                     "Join: {link}\nPlease have your ID with you.{note}\n\nA calendar invite is attached." + SIGN,

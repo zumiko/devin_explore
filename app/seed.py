@@ -67,6 +67,10 @@ REFUND_REASONS = ["duplicate_charge", "fee_error", "service_issue", "fraud_claim
 SETTINGS = [
     ("refund_auto_approve_max_cents", "5000", "Refunds up to this amount are approved automatically"),
     ("refund_lead_max_cents", "50000", "Refunds up to this amount need a support lead; above it, lead then finance"),
+    ("refund_agent_daily_max_cents", "50000", "Each agent can auto-approve up to this much per day; beyond it a lead approves"),
+    ("refund_repeat_max", "2", "Refunds a customer can get in 30 days before the next one needs a lead"),
+    ("refund_max_age_days", "90", "Charges older than this need a lead to refund"),
+    ("refund_approval_sla_hours", "24", "Approval steps waiting longer than this are flagged overdue"),
     ("kyc_second_review_risk_score", "70", "KYC cases at or above this risk score need a second reviewer to approve"),
     ("kyc_sla_hours", "48", "Target hours to resolve a KYC case"),
     ("face_match_pass_score", "45", "Face match scores (0-100) at or above this count as likely the same person"),
@@ -94,7 +98,7 @@ def migrate():
     conn = connect()
     with open(os.path.join(os.path.dirname(__file__), "schema.sql")) as f:
         conn.executescript(f.read())
-    for table, col in (("face_checks", "ocr_json"), ("customers", "phone")):
+    for table, col in (("face_checks", "ocr_json"), ("customers", "phone"), ("refunds", "risk_json")):
         if col not in [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
     conn.executemany("INSERT OR IGNORE INTO settings VALUES (?, ?, ?)", SETTINGS)
@@ -427,7 +431,13 @@ def build(db_path=DB_PATH):
 
     big1 = add_txn(active_ids[20], "transfer", 75000, "Transfer to Maya", now - timedelta(days=2))
     big2 = add_txn(active_ids[33], "transfer", 120000, "Transfer to Liam", now - timedelta(days=3))
-    for t in (big1, big2):
+    # Charges that trip the refund risk checks: very old ones, and customers whose identity check isn't approved.
+    old_txns = [add_txn(active_ids[40 + i], "card_payment", rng.randint(2500, 4500), rng.choice(merchants),
+                        now - timedelta(days=d)) for i, d in enumerate((120, 150, 200))]
+    unverified = [k["customer_id"] for k in kyc_cases if k["status"] not in ("approved", "rejected")][:3]
+    unverified_txns = [add_txn(cid, "card_payment", rng.randint(1500, 4000), rng.choice(merchants),
+                               now - timedelta(days=2 + i)) for i, cid in enumerate(unverified)]
+    for t in (big1, big2, *old_txns, *unverified_txns):
         conn.execute("INSERT INTO transactions VALUES (?, ?, ?, ?, ?, ?)",
                      (t["id"], t["customer_id"], t["type"], t["amount_cents"], t["description"], iso(t["created_at"])))
     add_refund(big1, "duplicate_charge", JAKE, now - timedelta(hours=20), status="pending_approval",
@@ -450,7 +460,8 @@ def build(db_path=DB_PATH):
                              "fee_error": "Fee charged in error", "service_issue": "Service problem reported by customer",
                              "fraud_claim": "Customer did not authorize this charge", "goodwill": "Goodwill credit",
                              "cancelled": "Order cancelled by customer"}[r["reason"]]
-        conn.execute("INSERT INTO refunds VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        conn.execute("INSERT INTO refunds (id, transaction_id, customer_id, amount_cents, reason, note, status,"
+                     " requested_by, created_at, resolved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                      (rid, r["txn"]["id"], r["txn"]["customer_id"], amount, r["reason"], note, status, r["agent"],
                       iso(r["when"]), iso(resolved) if resolved else None))
         audit(conn, r["agent"], "refund_requested", "refund", rid, after={"amount_cents": amount, "reason": r["reason"]},
