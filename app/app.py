@@ -155,7 +155,7 @@ def switch_user():
     if g.sso:
         abort(403)
     session["user_id"] = int(request.form["user_id"])
-    return redirect(request.referrer or url_for("index"))
+    return redirect(url_for("index"))
 
 
 @app.get("/login")
