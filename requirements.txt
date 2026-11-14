@@ -3,3 +3,4 @@ faker>=24
 opencv-python-headless>=4.8,<5
 numpy
 pillow>=10
+pytesseract>=0.3

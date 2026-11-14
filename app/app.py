@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from flask import Flask, Response, abort, flash, g, redirect, render_template, request, session, url_for
 
 import face_match
+import ocr
 import seed
 from db import audit, connect, get_setting, now_iso
 
@@ -197,7 +198,7 @@ def kyc_case(case_id):
         if f.get("watchlist_id"):
             f["watchlist"] = g.db.execute("SELECT * FROM watchlist WHERE id = ?", (f["watchlist_id"],)).fetchone()
     face_checks = g.db.execute(
-        "SELECT f.id, f.created_at, f.score, f.verdict, f.source, f.details_json, u.name AS run_by_name"
+        "SELECT f.id, f.created_at, f.score, f.verdict, f.source, f.details_json, f.ocr_json, u.name AS run_by_name"
         " FROM face_checks f LEFT JOIN users u ON u.id = f.run_by WHERE f.case_id = ? ORDER BY f.id DESC",
         (case_id,),
     ).fetchall()
@@ -210,7 +211,8 @@ def kyc_case(case_id):
 @app.post("/kyc/<int:case_id>/face-match")
 def kyc_face_match(case_id):
     require("kyc_view")
-    load_case(case_id)
+    case = load_case(case_id)
+    customer = g.db.execute("SELECT * FROM customers WHERE id = ?", (case["customer_id"],)).fetchone()
     id_file, selfie_file = request.files.get("id_image"), request.files.get("selfie")
     if not id_file or not id_file.filename or not selfie_file or not selfie_file.filename:
         flash("Upload both an ID photo and a selfie.", "error")
@@ -227,13 +229,14 @@ def kyc_face_match(case_id):
     details = {k: result[k] for k in ("id_faces_found", "selfie_faces_found",
                                       "id_face_confidence", "selfie_face_confidence")}
     details["model"] = "OpenCV YuNet + SFace (cosine similarity)"
+    id_read = ocr.check(id_bytes, customer, int(get_setting(g.db, "ocr_name_match_pct")))
     cur = g.db.execute(
         "INSERT INTO face_checks (case_id, run_by, source, created_at, score, verdict, id_image, id_image_type,"
-        " selfie_image, selfie_image_type, id_face, selfie_face, details_json)"
-        " VALUES (?, ?, 'reviewer_upload', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " selfie_image, selfie_image_type, id_face, selfie_face, details_json, ocr_json)"
+        " VALUES (?, ?, 'reviewer_upload', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (case_id, g.user["id"], now_iso(), result["score"], verdict, id_bytes, id_file.mimetype or "image/jpeg",
          selfie_bytes, selfie_file.mimetype or "image/jpeg", result["id_face_jpg"], result["selfie_face_jpg"],
-         json.dumps(details)),
+         json.dumps(details), json.dumps(id_read)),
     )
     audit(g.db, g.user["id"], "face_match_run", "kyc_case", case_id,
           after={"face_check_id": cur.lastrowid, "score": score_pct, "verdict": verdict})
@@ -275,6 +278,13 @@ def signup():
     except face_match.FaceMatchError as e:
         flags.append({"type": "selfie_mismatch", "detail": f"Automatic face match failed: {e}"})
         risk += 25
+    id_read = ocr.check(id_bytes, form, int(get_setting(g.db, "ocr_name_match_pct")))
+    if id_read["expired"]:
+        flags.append({"type": "doc_expired", "detail": f"ID expired {id_read['fields']['expires']} (read by OCR)"})
+        risk += 30
+    if id_read["problems"]:
+        flags.append({"type": "id_details_mismatch", "detail": "; ".join(id_read["problems"])})
+        risk += 25
     hit, hit_pct = watchlist_hit(form["name"])
     if hit:
         kind = "pep_match" if "PEP" in hit["list_name"] else "sanctions_name_match"
@@ -306,11 +316,11 @@ def signup():
         details["model"] = "OpenCV YuNet + SFace (cosine similarity)"
         fc_id = g.db.execute(
             "INSERT INTO face_checks (case_id, run_by, source, created_at, score, verdict, id_image, id_image_type,"
-            " selfie_image, selfie_image_type, id_face, selfie_face, details_json)"
-            " VALUES (?, NULL, 'signup', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " selfie_image, selfie_image_type, id_face, selfie_face, details_json, ocr_json)"
+            " VALUES (?, NULL, 'signup', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (case_id, now.isoformat(), face["score"], face["verdict"], id_bytes, id_file.mimetype or "image/jpeg",
              selfie_bytes, selfie_file.mimetype or "image/jpeg", face["id_face_jpg"], face["selfie_face_jpg"],
-             json.dumps(details)),
+             json.dumps(details), json.dumps(id_read)),
         ).lastrowid
         audit(g.db, None, "face_match_run", "kyc_case", case_id,
               after={"face_check_id": fc_id, "score": face["pct"], "verdict": face["verdict"]}, reason="Check at signup")

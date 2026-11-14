@@ -27,7 +27,7 @@ def _jpeg(img):
     return buf.getvalue()
 
 
-def id_card(face_file, name, dob, doc_number, state):
+def id_card(face_file, name, dob, doc_number, state, expires="2031-12-31"):
     """A US-style driver's license marked SPECIMEN, with the customer's own details."""
     w, h = 1000, 630
     card = Image.new("RGB", (w, h), (232, 238, 245))
@@ -43,7 +43,7 @@ def id_card(face_file, name, dob, doc_number, state):
     parts = name.split()
     rows = [("DL No.", doc_number), ("Last name", parts[-1].upper()), ("First name", " ".join(parts[:-1]).upper() or "-"),
             ("Date of birth", dob),
-            ("Expires", "2031-12-31"), ("Class", "D")]
+            ("Expires", expires), ("Class", "D")]
     x, y = 350, 110
     for k, v in rows:
         d.text((x, y), k, fill=(95, 95, 95), font=_font(18))

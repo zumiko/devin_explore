@@ -119,6 +119,20 @@
       <small class="muted">{% if latest.source == 'signup' %}Checked automatically at signup{% else %}Re-run by {{ latest.run_by_name }}{% endif %} on {{ latest.created_at|dt }}. Faces detected: ID {{ d.id_faces_found }}, selfie {{ d.selfie_faces_found }}{% if d.id_faces_found > 1 or d.selfie_faces_found > 1 %} (used the largest){% endif %}. Raw similarity {{ '%.3f'|format(latest.score) }}.</small>
     </div>
   </div>
+  {% set o = latest.ocr_json|fromjson if latest.ocr_json else None %}
+  {% if o %}
+  <h4>Details read from the ID (OCR)</h4>
+  {% if o.error %}<p class="muted small">{{ o.error }}</p>{% else %}
+  <table class="small ocr">
+    <tr><th>Field</th><th>Read from ID</th><th>Customer entered</th><th></th></tr>
+    {% for r in o.rows %}
+    <tr><td>{{ r.field }}</td><td>{{ r.on_id or '(unreadable)' }}</td><td>{{ r.entered or '' }}</td>
+      <td class="{{ 'good' if r.ok else 'bad' }}">{{ '&#10003;'|safe if r.ok else '&#10007;'|safe }} {{ r.note }}</td></tr>
+    {% endfor %}
+  </table>
+  <p class="muted small">Read with Tesseract (open-source OCR). In production the vendor or AI Builder's ID reader does this, including passports.</p>
+  {% endif %}
+  {% endif %}
   {% if face_checks|length > 1 %}
   <details><summary>Earlier face matches on this case ({{ face_checks|length - 1 }})</summary>
     <table class="small">

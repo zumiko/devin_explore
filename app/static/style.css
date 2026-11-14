@@ -17,6 +17,7 @@ table.small { font-size: 12px; }
 .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
 .muted { color: #777; }
 .bad { color: #c0392b; }
+.good { color: #1e8449; }
 .cards { display: flex; gap: 14px; margin: 16px 0; flex-wrap: wrap; }
 .card { background: #fff; padding: 14px 18px; border-radius: 8px; border: 1px solid #e5e7eb; min-width: 180px; }
 .big { font-size: 26px; font-weight: 700; }

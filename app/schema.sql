@@ -125,5 +125,6 @@ CREATE TABLE IF NOT EXISTS face_checks (
   selfie_image_type TEXT NOT NULL,
   id_face BLOB NOT NULL,
   selfie_face BLOB NOT NULL,
-  details_json TEXT NOT NULL
+  details_json TEXT NOT NULL,
+  ocr_json TEXT
 );

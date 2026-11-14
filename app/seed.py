@@ -12,6 +12,7 @@ from faker import Faker
 
 import face_match
 import kyc_docs
+import ocr
 from db import DB_PATH, audit, connect
 
 SEED = 42
@@ -69,6 +70,7 @@ SETTINGS = [
     ("kyc_sla_hours", "48", "Target hours to resolve a KYC case"),
     ("face_match_pass_score", "45", "Face match scores (0-100) at or above this count as likely the same person"),
     ("watchlist_review_pct", "85", "Signups whose name is at least this % similar to a watchlist entry go to manual review"),
+    ("ocr_name_match_pct", "95", "Name read from the ID must be at least this % similar to the name the customer typed"),
     ("face_match_review_score", "30", "Face match scores from this up to the pass score need a reviewer's judgment; below it, likely different people"),
 ]
 
@@ -77,6 +79,7 @@ SETTINGS = [
 # Case 2's selfie is a different person, so the face match flags it.
 SIGNUP_DOCS = {1: ("face_m1.jpg", "face_m1.jpg"), 2: ("face_m2.jpg", "face_m3.jpg"), 3: ("face_f1.jpg", "face_f1.jpg")}
 # More open cases get documents; these customers are renamed to fit the face.
+EXPIRED_ID_CASES = {10: "2024-03-31"}
 EXTRA_DOC_CUSTOMERS = [("face_f2.jpg", "Mei Tanaka"), ("face_m4.jpg", "Daniel Novak"),
                        ("face_f3.jpg", "Emily Carter"), ("face_f4.jpg", "Sarah Whitman")]
 
@@ -90,6 +93,8 @@ def migrate():
     conn = connect()
     with open(os.path.join(os.path.dirname(__file__), "schema.sql")) as f:
         conn.executescript(f.read())
+    if "ocr_json" not in [r[1] for r in conn.execute("PRAGMA table_info(face_checks)")]:
+        conn.execute("ALTER TABLE face_checks ADD COLUMN ocr_json TEXT")
     conn.executemany("INSERT OR IGNORE INTO settings VALUES (?, ?, ?)", SETTINGS)
     conn.commit()
     conn.close()
@@ -102,12 +107,14 @@ def signup_face_checks(docs, customers, cases):
     try:
         for cid, (id_face, selfie_face) in docs.items():
             c = customers[cases[cid - 1]["customer_id"] - 1]
-            id_img = kyc_docs.id_card(id_face, c["name"], c["dob"], f"D{cid:03d}-{c['ssn_last4']}", c["state"])
+            id_img = kyc_docs.id_card(id_face, c["name"], c["dob"], f"D{cid:03d}{c['ssn_last4']}", c["state"],
+                                      expires=EXPIRED_ID_CASES.get(cid, "2031-12-31"))
             selfie_img = kyc_docs.selfie(selfie_face, seed=cid)
             result = face_match.compare(id_img, selfie_img)
             pct = max(0, round(result["score"] * 100))
             checks[cid] = dict(result, id_image=id_img, selfie_image=selfie_img, pct=pct, verdict=face_match.verdict(
-                pct, settings["face_match_pass_score"], settings["face_match_review_score"]))
+                pct, settings["face_match_pass_score"], settings["face_match_review_score"]),
+                ocr=ocr.check(id_img, c, settings["ocr_name_match_pct"]))
     except Exception as e:  # e.g. offline and the model files can't be downloaded
         print(f"Skipping sample KYC documents: {e}")
         return {}
@@ -236,6 +243,10 @@ def build(db_path=DB_PATH):
         for f in kyc_cases[cid - 1]["flags"]:
             if f["type"] == "selfie_mismatch":
                 f["detail"] = f"Face match score {fc['pct']}/100"
+        if fc["ocr"]["expired"]:
+            flags = [f for f in kyc_cases[cid - 1]["flags"] if f["type"] != "doc_expired"]
+            flags.append({"type": "doc_expired", "detail": f"ID expired {fc['ocr']['fields']['expires']} (read by OCR)"})
+            kyc_cases[cid - 1]["flags"] = flags
 
     for c in customers:
         conn.execute(
@@ -270,10 +281,10 @@ def build(db_path=DB_PATH):
         details["model"] = "OpenCV YuNet + SFace (cosine similarity)"
         cur = conn.execute(
             "INSERT INTO face_checks (case_id, run_by, source, created_at, score, verdict, id_image, id_image_type,"
-            " selfie_image, selfie_image_type, id_face, selfie_face, details_json)"
-            " VALUES (?, NULL, 'signup', ?, ?, ?, ?, 'image/jpeg', ?, 'image/jpeg', ?, ?, ?)",
+            " selfie_image, selfie_image_type, id_face, selfie_face, details_json, ocr_json)"
+            " VALUES (?, NULL, 'signup', ?, ?, ?, ?, 'image/jpeg', ?, 'image/jpeg', ?, ?, ?, ?)",
             (cid, ts, fc["score"], fc["verdict"], fc["id_image"], fc["selfie_image"], fc["id_face_jpg"],
-             fc["selfie_face_jpg"], json.dumps(details)),
+             fc["selfie_face_jpg"], json.dumps(details), json.dumps(fc["ocr"])),
         )
         audit(conn, None, "face_match_run", "kyc_case", cid,
               after={"face_check_id": cur.lastrowid, "score": fc["pct"], "verdict": fc["verdict"]},
