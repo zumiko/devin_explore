@@ -813,7 +813,7 @@ def approval_decide(approval_id):
     comment = request.form.get("comment", "").strip()
     if a["status"] != "pending" or decision not in ("approved", "rejected"):
         abort(400)
-    if g.user["role"] != "admin" and g.user["role"] != a["required_role"]:
+    if g.user["role"] != a["required_role"]:
         abort(403)
     if r["requested_by"] == g.user["id"]:
         flash("You can't approve a refund you requested.", "error")
