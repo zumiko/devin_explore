@@ -19,6 +19,7 @@ from db import audit, connect, get_setting, now_iso
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY") or "demo-only-not-secret"
 app.config.update(
+    SESSION_COOKIE_NAME="acmepay_session",
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=os.environ.get("PUBLIC_BASE_URL", "").startswith("https://"),
