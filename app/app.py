@@ -1,4 +1,6 @@
+import difflib
 import json
+import random
 from datetime import datetime, timedelta
 
 from flask import Flask, Response, abort, flash, g, redirect, render_template, request, session, url_for
@@ -238,6 +240,86 @@ def kyc_face_match(case_id):
     g.db.commit()
     flash(f"Face match score {score_pct}/100: {label(verdict)}.")
     return redirect(url_for("kyc_case", case_id=case_id) + "#face-match")
+
+
+def watchlist_hit(name):
+    best, best_pct = None, 0
+    for w in g.db.execute("SELECT * FROM watchlist").fetchall():
+        pct = round(difflib.SequenceMatcher(None, name.lower(), w["name"].lower()).ratio() * 100)
+        if pct > best_pct:
+            best, best_pct = w, pct
+    return (best, best_pct) if best_pct >= int(get_setting(g.db, "watchlist_review_pct")) else (None, best_pct)
+
+
+@app.route("/signup", methods=["GET", "POST"])
+def signup():
+    """Customer-facing account opening: runs the identity checks and either approves instantly or opens a KYC case."""
+    if request.method == "GET":
+        return render_template("signup.html", result=None, form={})
+    form = {k: request.form.get(k, "").strip() for k in ("name", "email", "dob", "address", "state", "ssn_last4")}
+    id_file, selfie_file = request.files.get("id_image"), request.files.get("selfie")
+    if not all(form.values()) or not id_file or not id_file.filename or not selfie_file or not selfie_file.filename:
+        flash("Please fill in every field and add both photos.", "error")
+        return render_template("signup.html", result=None, form=form)
+    id_bytes, selfie_bytes = id_file.read(), selfie_file.read()
+    now = datetime.now().replace(microsecond=0)
+    flags, face, risk = [], None, 30
+    pass_score = int(get_setting(g.db, "face_match_pass_score"))
+    try:
+        face = face_match.compare(id_bytes, selfie_bytes)
+        face["pct"] = max(0, round(face["score"] * 100))
+        face["verdict"] = face_match.verdict(face["pct"], pass_score, int(get_setting(g.db, "face_match_review_score")))
+        if face["verdict"] != "likely_same_person":
+            flags.append({"type": "selfie_mismatch", "detail": f"Face match score {face['pct']}/100"})
+            risk += 35 if face["verdict"] == "likely_different_people" else 20
+    except face_match.FaceMatchError as e:
+        flags.append({"type": "selfie_mismatch", "detail": f"Automatic face match failed: {e}"})
+        risk += 25
+    hit, hit_pct = watchlist_hit(form["name"])
+    if hit:
+        kind = "pep_match" if "PEP" in hit["list_name"] else "sanctions_name_match"
+        flags.append({"type": kind, "match_pct": hit_pct, "watchlist_id": hit["id"],
+                      "detail": f"Name {hit_pct}% similar to '{hit['name']}' (DOB {hit['dob']}, {hit['country']})"})
+        risk += 45 + (20 if hit["dob"] == form["dob"] else 0)
+    approved = not flags
+    risk = min(99, risk if flags else 10)
+
+    cid = g.db.execute(
+        "INSERT INTO customers (name, email, dob, address, state, ssn_last4, account_type, status, signup_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, 'personal', ?, ?)",
+        (form["name"], form["email"], form["dob"], form["address"], form["state"].upper()[:2], form["ssn_last4"][-4:],
+         "active" if approved else "pending_kyc", now.isoformat()),
+    ).lastrowid
+    case_id = g.db.execute(
+        "INSERT INTO kyc_cases (customer_id, status, risk_score, flags_json, vendor_ref, requires_second_review,"
+        " created_at, sla_due_at, decision, decision_reason, decision_note, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (cid, "approved" if approved else "new", risk, json.dumps(flags), f"MV-{random.randint(100000, 999999)}",
+         int(risk >= int(get_setting(g.db, "kyc_second_review_risk_score"))), now.isoformat(),
+         (now + timedelta(hours=int(get_setting(g.db, "kyc_sla_hours")))).isoformat(),
+         "approved" if approved else None, "auto_approved" if approved else None,
+         "All automatic checks passed at signup." if approved else None, now.isoformat() if approved else None),
+    ).lastrowid
+    audit(g.db, None, "kyc_case_created", "kyc_case", case_id, after={"status": "new", "risk_score": risk},
+          reason="Created from customer signup")
+    if face:
+        details = {k: face[k] for k in ("id_faces_found", "selfie_faces_found", "id_face_confidence", "selfie_face_confidence")}
+        details["model"] = "OpenCV YuNet + SFace (cosine similarity)"
+        fc_id = g.db.execute(
+            "INSERT INTO face_checks (case_id, run_by, source, created_at, score, verdict, id_image, id_image_type,"
+            " selfie_image, selfie_image_type, id_face, selfie_face, details_json)"
+            " VALUES (?, NULL, 'signup', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (case_id, now.isoformat(), face["score"], face["verdict"], id_bytes, id_file.mimetype or "image/jpeg",
+             selfie_bytes, selfie_file.mimetype or "image/jpeg", face["id_face_jpg"], face["selfie_face_jpg"],
+             json.dumps(details)),
+        ).lastrowid
+        audit(g.db, None, "face_match_run", "kyc_case", case_id,
+              after={"face_check_id": fc_id, "score": face["pct"], "verdict": face["verdict"]}, reason="Check at signup")
+    if approved:
+        audit(g.db, None, "kyc_auto_approved", "kyc_case", case_id, before={"status": "new"},
+              after={"status": "approved"}, reason="All automatic checks passed at signup")
+    g.db.commit()
+    return render_template("signup.html", result="approved" if approved else "review", name=form["name"],
+                           case_id=case_id, form={})
 
 
 FACE_IMAGE_COLUMNS = {"id": ("id_image", "id_image_type"), "selfie": ("selfie_image", "selfie_image_type"),

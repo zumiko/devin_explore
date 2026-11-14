@@ -37,6 +37,7 @@
   </section>
   <section>
     <h3>Why this was flagged (from MockVerify)</h3>
+    {% if not flags %}<p class="muted">Nothing flagged.</p>{% endif %}
     {% for f in flags %}
     <div class="flagbox">
       <b>{{ f.type|label }}</b>{% if f.match_pct %} — {{ f.match_pct }}% match{% endif %}<br>
@@ -55,7 +56,7 @@
 
     <h3>Decision</h3>
     {% if case.status in ('approved', 'rejected') %}
-      <p><b>{{ case.decision|capitalize }}</b> by {{ case.decider }} on {{ case.decided_at|dt }}
+      <p><b>{{ case.decision|capitalize }}</b> by {{ case.decider or 'automatic rules (no human review)' }} on {{ case.decided_at|dt }}
       {% if case.first_decider %}(first approval: {{ case.first_decider }}){% endif %}<br>
       Reason: {{ case.decision_reason|label }}<br>Note: {{ case.decision_note }}</p>
     {% else %}

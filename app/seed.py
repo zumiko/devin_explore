@@ -68,6 +68,7 @@ SETTINGS = [
     ("kyc_second_review_risk_score", "70", "KYC cases at or above this risk score need a second reviewer to approve"),
     ("kyc_sla_hours", "48", "Target hours to resolve a KYC case"),
     ("face_match_pass_score", "45", "Face match scores (0-100) at or above this count as likely the same person"),
+    ("watchlist_review_pct", "85", "Signups whose name is at least this % similar to a watchlist entry go to manual review"),
     ("face_match_review_score", "30", "Face match scores from this up to the pass score need a reviewer's judgment; below it, likely different people"),
 ]
 

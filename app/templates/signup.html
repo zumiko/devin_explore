@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Open an account · AcmePay</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #1d2433; background: #eef2f8; }
+    header { padding: 16px 24px; background: #fff; border-bottom: 1px solid #dde3ec; display: flex; justify-content: space-between; align-items: center; }
+    .logo { font-weight: 800; font-size: 20px; color: #2f5bd3; }
+    .demo { font-size: 12px; color: #889; }
+    main { max-width: 560px; margin: 32px auto; background: #fff; border-radius: 12px; padding: 28px 32px; box-shadow: 0 2px 12px rgba(30,50,90,.08); }
+    h1 { margin: 0 0 4px; font-size: 24px; }
+    .sub { color: #667; margin: 0 0 20px; }
+    label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
+    input { width: 100%; font: inherit; padding: 9px 11px; border: 1px solid #ccd3df; border-radius: 6px; }
+    .row { display: flex; gap: 12px; } .row > div { flex: 1; }
+    .photo { border: 1px dashed #aab4c6; border-radius: 8px; padding: 12px; margin-top: 12px; background: #f8fafd; }
+    .photo small { color: #778; display: block; margin-top: 4px; }
+    button { margin-top: 22px; width: 100%; padding: 12px; font: inherit; font-weight: 700; color: #fff; background: #2f5bd3; border: 0; border-radius: 8px; cursor: pointer; }
+    .error { background: #fdecea; border: 1px solid #f5b7b1; padding: 8px 12px; border-radius: 6px; }
+    .result { text-align: center; padding: 12px 0; }
+    .icon { font-size: 48px; width: 84px; height: 84px; line-height: 84px; border-radius: 50%; margin: 0 auto 12px; color: #fff; }
+    .ok { background: #27ae60; } .wait { background: #f0ad4e; }
+    .staff { margin-top: 24px; padding-top: 14px; border-top: 1px solid #eee; font-size: 13px; color: #778; }
+  </style>
+</head>
+<body>
+<header><span class="logo">AcmePay</span><span class="demo">Demo signup page &middot; fake data only</span></header>
+<main>
+{% if result == 'approved' %}
+  <div class="result">
+    <div class="icon ok">&#10003;</div>
+    <h1>You're verified, {{ name.split()[0] }}!</h1>
+    <p class="sub">Your identity checks passed and your account is ready to use.</p>
+  </div>
+{% elif result == 'review' %}
+  <div class="result">
+    <div class="icon wait" style="font-size:26px;font-weight:700">48h</div>
+    <h1>Thanks, {{ name.split()[0] }}. We'll be in touch soon.</h1>
+    <p class="sub">We need a little more time to verify your identity. Our team usually gets back to you within 48 hours, by email.</p>
+  </div>
+{% else %}
+  <h1>Open an account</h1>
+  <p class="sub">It takes about two minutes. We'll check your ID and selfie to confirm it's you.</p>
+  {% with messages = get_flashed_messages(with_categories=true) %}{% for cat, msg in messages %}<p class="error">{{ msg }}</p>{% endfor %}{% endwith %}
+  <form method="post" enctype="multipart/form-data">
+    <label>Full legal name<input name="name" value="{{ form.name }}" required></label>
+    <label>Email<input type="email" name="email" value="{{ form.email }}" required></label>
+    <div class="row">
+      <div><label>Date of birth<input type="date" name="dob" value="{{ form.dob }}" required></label></div>
+      <div><label>Last 4 of SSN<input name="ssn_last4" value="{{ form.ssn_last4 }}" maxlength="4" pattern="[0-9]{4}" required></label></div>
+    </div>
+    <div class="row">
+      <div style="flex:3"><label>Street address and city<input name="address" value="{{ form.address }}" required></label></div>
+      <div><label>State<input name="state" value="{{ form.state }}" maxlength="2" placeholder="NY" required></label></div>
+    </div>
+    <div class="photo"><label style="margin-top:0">Photo of your driver's license or passport<input type="file" name="id_image" accept="image/*" required></label><small>Make sure your face and details are clearly visible.</small></div>
+    <div class="photo"><label style="margin-top:0">A selfie<input type="file" name="selfie" accept="image/*" capture="user" required></label><small>Face the camera in good light, no hat or sunglasses.</small></div>
+    <button>Verify my identity</button>
+  </form>
+{% endif %}
+{% if result %}
+  <p class="staff">Demo only, not shown to real customers: this created <a href="{{ url_for('kyc_case', case_id=case_id) }}">KYC case #{{ case_id }}</a>{% if result == 'approved' %}, already auto-approved{% else %} in the review queue{% endif %}. <a href="{{ url_for('signup') }}">Start another signup</a></p>
+{% endif %}
+</main>
+</body>
+</html>
