@@ -9,7 +9,7 @@ import urllib.request
 API = "https://api.devin.ai"
 ORG_ID = os.environ.get("DEVIN_ORG_ID", "")
 REPO = os.environ.get("CHANGE_REPO", "zumiko/devin_explore")
-BASE_BRANCH = os.environ.get("CHANGE_BASE_BRANCH", "devin/face-match-upload")
+BASE_BRANCH = os.environ.get("CHANGE_BASE_BRANCH", "main")
 
 
 def configured():
