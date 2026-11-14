@@ -44,6 +44,7 @@ KYC_REASONS = {
     "request_info": ["need_clearer_id", "need_proof_of_address", "need_selfie_retake"],
     "escalate": ["complex_match", "possible_pep", "needs_senior_judgment"],
 }
+SOURCES_OF_FUNDS = ["salary", "business", "savings", "other"]
 REFUND_REASONS = seed.REFUND_REASONS
 SIMPLE_HOME_ROLES = {"kyc_analyst", "support_agent"}
 APPS = [
@@ -425,7 +426,7 @@ def kyc_case(case_id):
         " WHERE m.case_id = ? ORDER BY m.id DESC", (case_id,)).fetchall()
     return render_template("kyc_case.html", case=case, customer=customer, flags=flags, messages=messages,
                            email_live=bool(notify.email_provider()), sms_live=bool(notify.sms_provider()),
-                           reasons=KYC_REASONS, history=history("kyc_case", case_id), face_checks=face_checks,
+                           reasons=KYC_REASONS, sources_of_funds=SOURCES_OF_FUNDS, history=history("kyc_case", case_id), face_checks=face_checks,
                            face_pass=int(get_setting(g.db, "face_match_pass_score")),
                            face_review=int(get_setting(g.db, "face_match_review_score")))
 
@@ -690,6 +691,32 @@ def kyc_claim(case_id):
     return redirect(url_for("kyc_case", case_id=case_id))
 
 
+@app.post("/kyc/<int:case_id>/source-of-funds")
+def kyc_source_of_funds(case_id):
+    require("kyc_work")
+    case = load_case(case_id)
+    source = request.form.get("source_of_funds", "")
+    note = request.form.get("source_of_funds_note", "").strip()
+    if not case["requires_second_review"]:
+        flash("Source of funds is only recorded on high-risk cases.", "error")
+    elif case["status"] in ("approved", "rejected"):
+        flash("This case is already closed.", "error")
+    elif case["assigned_to"] != g.user["id"] and not (case["status"] == "pending_second_review" and can("kyc_second_review")):
+        flash("Claim the case before recording the source of funds.", "error")
+    elif source not in SOURCES_OF_FUNDS or not note:
+        flash("Pick where the money comes from and write a note.", "error")
+    else:
+        g.db.execute("UPDATE kyc_cases SET source_of_funds = ?, source_of_funds_note = ? WHERE id = ?",
+                     (source, note, case_id))
+        audit(g.db, g.user["id"], "kyc_source_of_funds_recorded", "kyc_case", case_id,
+              before={"source_of_funds": case["source_of_funds"], "note": case["source_of_funds_note"]}
+              if case["source_of_funds"] else None,
+              after={"source_of_funds": source, "note": note})
+        g.db.commit()
+        flash("Source of funds saved.")
+    return redirect(url_for("kyc_case", case_id=case_id) + "#source-of-funds")
+
+
 @app.post("/kyc/<int:case_id>/decide")
 def kyc_decide(case_id):
     require("kyc_work")
@@ -706,6 +733,10 @@ def kyc_decide(case_id):
     if case["assigned_to"] != g.user["id"] and case["status"] != "pending_second_review":
         flash("Claim the case before making a decision.", "error")
         return redirect(url_for("kyc_case", case_id=case_id))
+
+    if decision == "approve" and case["requires_second_review"] and not case["source_of_funds"]:
+        flash("High-risk case: record the source of funds before approving.", "error")
+        return redirect(url_for("kyc_case", case_id=case_id) + "#source-of-funds")
 
     updates = {}
     customer_status = None
