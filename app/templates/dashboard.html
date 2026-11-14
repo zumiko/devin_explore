@@ -25,7 +25,7 @@
   <section>
     <h3>Customers with 3+ refunds in 30 days</h3>
     <table><tr><th>Customer</th><th>Refunds</th><th>Total</th></tr>
-      {% for r in repeaters %}<tr><td><a href="{{ url_for('customer', customer_id=r.id) }}">{{ r.name }}</a></td><td>{{ r.n }}</td><td>{{ r.total|money }}</td></tr>
+      {% for r in repeaters %}<tr><td>{% if can('customer_view') %}<a href="{{ url_for('customer', customer_id=r.id) }}">{{ r.name }}</a>{% else %}{{ r.name }}{% endif %}</td><td>{{ r.n }}</td><td>{{ r.total|money }}</td></tr>
       {% else %}<tr><td colspan="3" class="muted">None</td></tr>{% endfor %}</table>
     <h3>Feature flag changes in this period</h3>
     <table class="small"><tr><th>When</th><th>Flag</th><th>Change</th><th>By</th></tr>
