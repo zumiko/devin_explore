@@ -10,6 +10,7 @@
   <div class="card"><div class="big">{{ summary.open }}</div>open cases now</div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>Chart.defaults.font.family = "Inter, system-ui, sans-serif"; Chart.defaults.color = "#64748b"; Chart.defaults.borderColor = "#eef1f7";</script>
 <div class="cols">
   <section>
     <h3>Signups per week, by outcome</h3>
@@ -34,17 +35,17 @@
   const labels = {{ labels|tojson }};
   const v = {{ volume|tojson }};
   new Chart(document.getElementById('volume'), {type: 'bar', data: {labels, datasets: [
-    {label: 'Auto-approved', data: v.auto_approved, backgroundColor: '#5cb85c'},
-    {label: 'Approved by reviewer', data: v.approved_by_reviewer, backgroundColor: '#5b8def'},
-    {label: 'Rejected', data: v.rejected, backgroundColor: '#d9534f'},
-    {label: 'Still open', data: v.open, backgroundColor: '#f0ad4e'}]},
+    {label: 'Auto-approved', data: v.auto_approved, backgroundColor: '#10b981'},
+    {label: 'Approved by reviewer', data: v.approved_by_reviewer, backgroundColor: '#5b5bf0'},
+    {label: 'Rejected', data: v.rejected, backgroundColor: '#f43f5e'},
+    {label: 'Still open', data: v.open, backgroundColor: '#f59e0b'}]},
     options: {scales: {x: {stacked: true}, y: {stacked: true}}}});
   new Chart(document.getElementById('speed'), {type: 'line', data: {labels, datasets: [
-    {label: 'Typical hours to decision', data: {{ median_hours|tojson }}, borderColor: '#5b8def', yAxisID: 'y'},
-    {label: '% past deadline', data: {{ breach_pct|tojson }}, borderColor: '#d9534f', yAxisID: 'y2'}]},
+    {label: 'Typical hours to decision', data: {{ median_hours|tojson }}, borderColor: '#5b5bf0', yAxisID: 'y'},
+    {label: '% past deadline', data: {{ breach_pct|tojson }}, borderColor: '#f43f5e', yAxisID: 'y2'}]},
     options: {scales: {y: {title: {display: true, text: 'hours'}}, y2: {position: 'right', min: 0, max: 100, title: {display: true, text: '% late'}, grid: {drawOnChartArea: false}}}}});
   for (const c of document.querySelectorAll('canvas.spark')) {
-    new Chart(c, {type: 'bar', data: {labels, datasets: [{data: JSON.parse(c.dataset.v), backgroundColor: '#5b8def'}]},
+    new Chart(c, {type: 'bar', data: {labels, datasets: [{data: JSON.parse(c.dataset.v), backgroundColor: '#5b5bf0'}]},
       options: {plugins: {legend: {display: false}, tooltip: {enabled: true}}, scales: {x: {display: false}, y: {display: false}}, animation: false}});
   }
 </script>
