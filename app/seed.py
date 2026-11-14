@@ -122,6 +122,57 @@ def signup_face_checks(docs, customers, cases):
     return checks
 
 
+def kyc_history(conn, now):
+    """12 weeks of older signups and decisions so the admin dashboard has trends.
+
+    Uses its own random generator so the rest of the demo data is unchanged. Story: five weeks ago Priya was on
+    leave, Marcus covered alone, and deadline misses spiked.
+    """
+    rng = random.Random(SEED + 7)
+    fake = Faker("en_US")
+    fake.seed_instance(SEED + 7)
+    next_customer = conn.execute("SELECT MAX(id) FROM customers").fetchone()[0] + 1
+    next_case = 1000
+    speed = {PRIYA: (3, 20), MARCUS: (2, 12), DANA: (6, 40)}
+    for week in range(12, 0, -1):
+        leave = week == 5
+        for _ in range(int(22 + (12 - week) * 1.8 + rng.randint(-4, 4))):
+            created = now - timedelta(weeks=week, days=rng.uniform(0, 7))
+            name = fake.name()
+            flagged = rng.random() < 0.32
+            risk = rng.randint(40, 95) if flagged else rng.randint(5, 25)
+            if not flagged:
+                decided_by, reason, status = None, "auto_approved", "approved"
+                decided_at, note = created + timedelta(seconds=rng.randint(5, 40)), "All automatic checks passed at signup."
+            else:
+                decided_by = MARCUS if leave else rng.choices([PRIYA, MARCUS, DANA], [6, 3, 1])[0]
+                lo, hi = speed[decided_by]
+                hours = rng.uniform(lo, hi) * (6 if leave else 1)
+                status = "approved" if rng.random() < 0.74 else "rejected"
+                reason = rng.choice(["false_positive_cleared", "docs_verified", "additional_docs_received"]
+                                    if status == "approved" else ["identity_not_verified", "watchlist_confirmed", "fraud_suspected"])
+                decided_at, note = created + timedelta(hours=hours), "Reviewed documents and vendor results."
+            conn.execute(
+                "INSERT INTO customers VALUES (?, ?, ?, ?, ?, ?, ?, 'personal', ?, ?, ?)",
+                (next_customer, name, fake.free_email(), fake.date_of_birth(minimum_age=19, maximum_age=80).isoformat(),
+                 fake.street_address() + ", " + fake.city(), fake.state_abbr(), f"{rng.randint(0, 9999):04d}",
+                 "active" if status == "approved" else "rejected", iso(created), f"+1 212-555-01{next_customer % 100:02d}"),
+            )
+            second = flagged and risk >= 70 and status == "approved" and decided_by != DANA
+            conn.execute(
+                "INSERT INTO kyc_cases (id, customer_id, status, assigned_to, risk_score, flags_json, vendor_ref,"
+                " requires_second_review, created_at, sla_due_at, first_decision_by, decision, decision_reason,"
+                " decision_note, decided_by, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (next_case, next_customer, status, decided_by, risk,
+                 json.dumps([{"type": rng.choice(list(FLAG_TYPES)), "detail": "Historical case"}] if flagged else []),
+                 f"MV-{rng.randint(100000, 999999)}", int(flagged and risk >= 70), iso(created), iso(created + timedelta(hours=48)),
+                 (PRIYA if decided_by == MARCUS else MARCUS) if second else None, status, reason, note, decided_by,
+                 iso(decided_at)),
+            )
+            next_customer += 1
+            next_case += 1
+
+
 def build(db_path=DB_PATH):
     rng = random.Random(SEED)
     fake = Faker("en_US")
@@ -433,6 +484,7 @@ def build(db_path=DB_PATH):
             audit(conn, owner, "flag_updated", "feature_flag", i, after={"enabled": enabled, "rollout_pct": pct},
                   reason="Initial configuration", ts=iso(updated))
 
+    kyc_history(conn, now)
     conn.commit()
     conn.close()
 

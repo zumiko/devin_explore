@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>KYC dashboard</h1>
+<p class="muted">Last 12 weeks of signups and reviews. Only compliance leads and admins can see this page.</p>
+<div class="cards">
+  <div class="card"><div class="big">{{ summary.signups }}</div>signups checked</div>
+  <div class="card"><div class="big">{{ summary.auto_pct }}%</div>approved automatically</div>
+  <div class="card"><div class="big">{{ summary.median_hours }}h</div>typical time to a reviewer decision</div>
+  <div class="card"><div class="big {{ 'bad' if summary.on_time_pct and summary.on_time_pct < 90 }}">{{ summary.on_time_pct }}%</div>decided within the deadline</div>
+  <div class="card"><div class="big">{{ summary.open }}</div>open cases now</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<div class="cols">
+  <section>
+    <h3>Signups per week, by outcome</h3>
+    <canvas id="volume" height="160"></canvas>
+  </section>
+  <section>
+    <h3>Reviewer speed per week</h3>
+    <canvas id="speed" height="160"></canvas>
+  </section>
+</div>
+<h3>Reviewers (last 12 weeks)</h3>
+<table>
+  <tr><th>Reviewer</th><th>Cases decided</th><th>Approved</th><th>Typical time</th><th>Within deadline</th><th>Second-review cases</th><th>Open now</th><th>Oldest open since</th><th style="width:220px">Decided per week</th></tr>
+  {% for r in reviewers %}
+  <tr><td>{{ r.name }}</td><td>{{ r.decided }}</td><td>{{ r.approved_pct }}%</td><td>{{ r.median_hours }}h</td>
+    <td class="{{ 'bad' if r.on_time_pct < 90 else '' }}">{{ r.on_time_pct }}%</td><td>{{ r.second_reviews }}</td><td>{{ r.open_now }}</td>
+    <td>{{ r.oldest_open|dt if r.oldest_open else '' }}</td><td><canvas class="spark" data-v="{{ r.weekly|tojson }}" height="34"></canvas></td></tr>
+  {% endfor %}
+</table>
+<p class="muted small">"Typical time" is the median hours from signup to decision. Auto-approved signups are not counted for reviewers. Deadline is the KYC deadline on the Rules page.</p>
+<script>
+  const labels = {{ labels|tojson }};
+  const v = {{ volume|tojson }};
+  new Chart(document.getElementById('volume'), {type: 'bar', data: {labels, datasets: [
+    {label: 'Auto-approved', data: v.auto_approved, backgroundColor: '#5cb85c'},
+    {label: 'Approved by reviewer', data: v.approved_by_reviewer, backgroundColor: '#5b8def'},
+    {label: 'Rejected', data: v.rejected, backgroundColor: '#d9534f'},
+    {label: 'Still open', data: v.open, backgroundColor: '#f0ad4e'}]},
+    options: {scales: {x: {stacked: true}, y: {stacked: true}}}});
+  new Chart(document.getElementById('speed'), {type: 'line', data: {labels, datasets: [
+    {label: 'Typical hours to decision', data: {{ median_hours|tojson }}, borderColor: '#5b8def', yAxisID: 'y'},
+    {label: '% past deadline', data: {{ breach_pct|tojson }}, borderColor: '#d9534f', yAxisID: 'y2'}]},
+    options: {scales: {y: {title: {display: true, text: 'hours'}}, y2: {position: 'right', min: 0, max: 100, title: {display: true, text: '% late'}, grid: {drawOnChartArea: false}}}}});
+  for (const c of document.querySelectorAll('canvas.spark')) {
+    new Chart(c, {type: 'bar', data: {labels, datasets: [{data: JSON.parse(c.dataset.v), backgroundColor: '#5b8def'}]},
+      options: {plugins: {legend: {display: false}, tooltip: {enabled: true}}, scales: {x: {display: false}, y: {display: false}}, animation: false}});
+  }
+</script>
+{% endblock %}

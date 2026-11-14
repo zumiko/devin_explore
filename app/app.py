@@ -28,6 +28,7 @@ PERMS = {
     "customer_pii": KYC_ROLES,
     "refund_view": {"support_agent", "support_lead", "finance", "compliance_lead", "admin"},
     "refund_request": {"support_agent", "support_lead", "admin"},
+    "kyc_dashboard": {"compliance_lead", "admin"},
     "refund_dashboard": {"support_lead", "finance", "pm", "engineer", "compliance_lead", "admin"},
     "approvals_view": {"support_lead", "finance", "admin"},
     "flag_view": ALL_ROLES,
@@ -738,6 +739,79 @@ def refund_dashboard():
     labels = [start.strftime("%b %d") for start, _ in weeks]
     return render_template("dashboard.html", labels=labels, series=series, by_reason=by_reason, by_agent=by_agent,
                            repeaters=repeaters, flag_changes=flag_changes)
+
+
+@app.get("/kyc/dashboard")
+def kyc_dashboard():
+    require("kyc_dashboard")
+    weeks_back = 12
+    today = datetime.now().date()
+    weeks = [(today - timedelta(days=7 * i + 6), today - timedelta(days=7 * i)) for i in reversed(range(weeks_back))]
+    since = datetime.combine(weeks[0][0], datetime.min.time()).isoformat()
+    cases = g.db.execute(
+        "SELECT k.*, u.name AS reviewer FROM kyc_cases k LEFT JOIN users u ON u.id = k.decided_by WHERE k.created_at >= ?",
+        (since,)).fetchall()
+
+    def week_of(ts):
+        d = datetime.fromisoformat(ts).date()
+        return next((i for i, (a, b) in enumerate(weeks) if a <= d <= b), None)
+
+    def hours(c):
+        return (datetime.fromisoformat(c["decided_at"]) - datetime.fromisoformat(c["created_at"])).total_seconds() / 3600
+
+    def median(xs):
+        xs = sorted(xs)
+        return round((xs[len(xs) // 2] + xs[(len(xs) - 1) // 2]) / 2, 1) if xs else None
+
+    n = len(weeks)
+    volume = {k: [0] * n for k in ("auto_approved", "approved_by_reviewer", "rejected", "open")}
+    review_hours, breaches, manual = [[] for _ in range(n)], [0] * n, [0] * n
+    per_reviewer = {}
+    for c in cases:
+        w = week_of(c["created_at"])
+        if w is None:
+            continue
+        if c["status"] not in ("approved", "rejected"):
+            volume["open"][w] += 1
+            continue
+        if c["decision_reason"] == "auto_approved":
+            volume["auto_approved"][w] += 1
+            continue
+        volume["approved_by_reviewer" if c["status"] == "approved" else "rejected"][w] += 1
+        h = hours(c)
+        review_hours[w].append(h)
+        manual[w] += 1
+        breaches[w] += c["decided_at"] > c["sla_due_at"]
+        r = per_reviewer.setdefault(c["reviewer"] or "Unknown", {"hours": [], "approved": 0, "late": 0, "weekly": [0] * n, "second": 0})
+        r["hours"].append(h)
+        r["approved"] += c["status"] == "approved"
+        r["late"] += c["decided_at"] > c["sla_due_at"]
+        r["weekly"][w] += 1
+        r["second"] += bool(c["first_decision_by"])
+    open_by = {row["name"]: row for row in g.db.execute(
+        f"SELECT u.name, COUNT(*) n, MIN(k.created_at) oldest FROM kyc_cases k JOIN users u ON u.id = k.assigned_to"
+        f" WHERE k.status IN {OPEN_KYC} GROUP BY u.name").fetchall()}
+    reviewers = []
+    for name, r in sorted(per_reviewer.items(), key=lambda kv: -len(kv[1]["hours"])):
+        total = len(r["hours"])
+        reviewers.append({"name": name, "decided": total, "approved_pct": round(100 * r["approved"] / total),
+                          "median_hours": median(r["hours"]), "on_time_pct": round(100 * (total - r["late"]) / total),
+                          "second_reviews": r["second"], "weekly": r["weekly"],
+                          "open_now": open_by[name]["n"] if name in open_by else 0,
+                          "oldest_open": open_by[name]["oldest"] if name in open_by else None})
+    total_decided = sum(volume["auto_approved"]) + sum(manual)
+    summary = {
+        "signups": len(cases),
+        "auto_pct": round(100 * sum(volume["auto_approved"]) / total_decided) if total_decided else 0,
+        "median_hours": median([h for ws in review_hours for h in ws]),
+        "on_time_pct": round(100 * (sum(manual) - sum(breaches)) / sum(manual)) if sum(manual) else None,
+        "open": g.db.execute(f"SELECT COUNT(*) FROM kyc_cases WHERE status IN {OPEN_KYC}").fetchone()[0],
+    }
+    return render_template(
+        "kyc_dashboard.html", labels=[a.strftime("%b %d") for a, _ in weeks], volume=volume,
+        median_hours=[median(x) for x in review_hours],
+        breach_pct=[round(100 * b / m) if m else 0 for b, m in zip(breaches, manual)],
+        reviewers=reviewers, summary=summary)
 
 
 # ---------- Feature flags ----------

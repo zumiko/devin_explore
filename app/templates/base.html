@@ -12,6 +12,7 @@
     {% if can('kyc_view') %}<a href="{{ url_for('kyc_list') }}">KYC Queue</a>{% endif %}
     {% if can('refund_view') %}<a href="{{ url_for('refunds') }}">Refunds</a>{% endif %}
     {% if can('approvals_view') %}<a href="{{ url_for('approvals') }}">Approvals{% if pending_count %} <span class="pill">{{ pending_count }}</span>{% endif %}</a>{% endif %}
+    {% if can('kyc_dashboard') %}<a href="{{ url_for('kyc_dashboard') }}">KYC Dashboard</a>{% endif %}
     {% if can('refund_dashboard') %}<a href="{{ url_for('refund_dashboard') }}">Refund Dashboard</a>{% endif %}
     <a href="{{ url_for('flags') }}">Feature Flags</a>
     {% if can('customer_view') %}<a href="{{ url_for('customers') }}">Customers</a>{% endif %}
