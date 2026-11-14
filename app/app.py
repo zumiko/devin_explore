@@ -1,11 +1,15 @@
 import difflib
 import json
+import os
 import random
+import secrets
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from flask import Flask, Response, abort, flash, g, redirect, render_template, request, session, url_for
 
 import face_match
+import notify
 import ocr
 import seed
 from db import audit, connect, get_setting, now_iso
@@ -202,7 +206,11 @@ def kyc_case(case_id):
         " FROM face_checks f LEFT JOIN users u ON u.id = f.run_by WHERE f.case_id = ? ORDER BY f.id DESC",
         (case_id,),
     ).fetchall()
-    return render_template("kyc_case.html", case=case, customer=customer, flags=flags,
+    messages = g.db.execute(
+        "SELECT m.*, u.name AS sent_by_name FROM messages m LEFT JOIN users u ON u.id = m.sent_by"
+        " WHERE m.case_id = ? ORDER BY m.id DESC", (case_id,)).fetchall()
+    return render_template("kyc_case.html", case=case, customer=customer, flags=flags, messages=messages,
+                           email_live=bool(notify.email_provider()), sms_live=bool(notify.sms_provider()),
                            reasons=KYC_REASONS, history=history("kyc_case", case_id), face_checks=face_checks,
                            face_pass=int(get_setting(g.db, "face_match_pass_score")),
                            face_review=int(get_setting(g.db, "face_match_review_score")))
@@ -245,6 +253,32 @@ def kyc_face_match(case_id):
     return redirect(url_for("kyc_case", case_id=case_id) + "#face-match")
 
 
+def public_url(endpoint, **kw):
+    base = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/") or request.url_root.rstrip("/")
+    return base + url_for(endpoint, **kw)
+
+
+def customer_link(case_id, purpose, days=7):
+    token = secrets.token_urlsafe(16)
+    now = datetime.now().replace(microsecond=0)
+    g.db.execute("INSERT INTO customer_links VALUES (?, ?, ?, ?, ?, NULL)",
+                 (token, case_id, purpose, now.isoformat(), (now + timedelta(days=days)).isoformat()))
+    return public_url("resubmit", token=token)
+
+
+def save_face_check(case_id, run_by, source, face, id_bytes, id_mime, selfie_bytes, selfie_mime, id_read):
+    details = {k: face[k] for k in ("id_faces_found", "selfie_faces_found", "id_face_confidence", "selfie_face_confidence")}
+    details["model"] = "OpenCV YuNet + SFace (cosine similarity)"
+    return g.db.execute(
+        "INSERT INTO face_checks (case_id, run_by, source, created_at, score, verdict, id_image, id_image_type,"
+        " selfie_image, selfie_image_type, id_face, selfie_face, details_json, ocr_json)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (case_id, run_by, source, now_iso(), face["score"], face["verdict"], id_bytes, id_mime or "image/jpeg",
+         selfie_bytes, selfie_mime or "image/jpeg", face["id_face_jpg"], face["selfie_face_jpg"], json.dumps(details),
+         json.dumps(id_read)),
+    ).lastrowid
+
+
 def watchlist_hit(name):
     best, best_pct = None, 0
     for w in g.db.execute("SELECT * FROM watchlist").fetchall():
@@ -259,7 +293,7 @@ def signup():
     """Customer-facing account opening: runs the identity checks and either approves instantly or opens a KYC case."""
     if request.method == "GET":
         return render_template("signup.html", result=None, form={})
-    form = {k: request.form.get(k, "").strip() for k in ("name", "email", "dob", "address", "state", "ssn_last4")}
+    form = {k: request.form.get(k, "").strip() for k in ("name", "email", "phone", "dob", "address", "state", "ssn_last4")}
     id_file, selfie_file = request.files.get("id_image"), request.files.get("selfie")
     if not all(form.values()) or not id_file or not id_file.filename or not selfie_file or not selfie_file.filename:
         flash("Please fill in every field and add both photos.", "error")
@@ -295,9 +329,9 @@ def signup():
     risk = min(99, risk if flags else 10)
 
     cid = g.db.execute(
-        "INSERT INTO customers (name, email, dob, address, state, ssn_last4, account_type, status, signup_at)"
-        " VALUES (?, ?, ?, ?, ?, ?, 'personal', ?, ?)",
-        (form["name"], form["email"], form["dob"], form["address"], form["state"].upper()[:2], form["ssn_last4"][-4:],
+        "INSERT INTO customers (name, email, phone, dob, address, state, ssn_last4, account_type, status, signup_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, 'personal', ?, ?)",
+        (form["name"], form["email"], form["phone"], form["dob"], form["address"], form["state"].upper()[:2], form["ssn_last4"][-4:],
          "active" if approved else "pending_kyc", now.isoformat()),
     ).lastrowid
     case_id = g.db.execute(
@@ -327,6 +361,8 @@ def signup():
     if approved:
         audit(g.db, None, "kyc_auto_approved", "kyc_case", case_id, before={"status": "new"},
               after={"status": "approved"}, reason="All automatic checks passed at signup")
+    customer = g.db.execute("SELECT * FROM customers WHERE id = ?", (cid,)).fetchone()
+    notify.send(g.db, case_id, customer, "signup_approved" if approved else "signup_review")
     g.db.commit()
     return render_template("signup.html", result="approved" if approved else "review", name=form["name"],
                            case_id=case_id, form={})
@@ -347,6 +383,81 @@ def face_check_image(check_id, kind):
     if not row:
         abort(404)
     return Response(row["data"], mimetype=row["mime"])
+
+
+@app.post("/kyc/<int:case_id>/invite-call")
+def kyc_invite_call(case_id):
+    require("kyc_view")
+    case = load_case(case_id)
+    try:
+        start = datetime.fromisoformat(f"{request.form['date']}T{request.form['time']}").replace(
+            tzinfo=ZoneInfo(os.environ.get("APP_TIMEZONE", "America/New_York")))
+        minutes = int(request.form.get("minutes", 15))
+    except (KeyError, ValueError):
+        flash("Pick a date and time for the call.", "error")
+        return redirect(url_for("kyc_case", case_id=case_id) + "#contact")
+    link = f"https://meet.jit.si/AcmePay-KYC-{case_id}-{secrets.token_hex(4)}"
+    customer = g.db.execute("SELECT * FROM customers WHERE id = ?", (case["customer_id"],)).fetchone()
+    notify.send(g.db, case_id, customer, "call_invite", sent_by=g.user["id"], ics=notify.call_invite_ics(start, minutes, link, case_id),
+                link=link, when=start.strftime("%a %b %d, %I:%M %p %Z").replace(" 0", " "), minutes=minutes,
+                note=request.form.get("note", "").strip())
+    audit(g.db, g.user["id"], "kyc_call_invited", "kyc_case", case_id, after={"when": start.isoformat(), "minutes": minutes, "link": link})
+    g.db.commit()
+    flash("Call invite sent to the customer.")
+    return redirect(url_for("kyc_case", case_id=case_id) + "#contact")
+
+
+@app.get("/kyc/message/<int:message_id>/invite.ics")
+def message_ics(message_id):
+    require("kyc_view")
+    row = g.db.execute("SELECT ics FROM messages WHERE id = ? AND ics IS NOT NULL", (message_id,)).fetchone()
+    if not row:
+        abort(404)
+    return Response(row["ics"], mimetype="text/calendar", headers={"Content-Disposition": "attachment; filename=invite.ics"})
+
+
+RESUBMIT_ASKS = {
+    "need_clearer_id": "We couldn't read your ID clearly. Please upload a new photo of it, plus a fresh selfie.",
+    "need_selfie_retake": "We couldn't match your selfie to your ID. Please take a new selfie and upload it with your ID.",
+    "need_proof_of_address": "Please upload your ID and a selfie again; our team will also email you about proof of address.",
+}
+
+
+@app.route("/resubmit/<token>", methods=["GET", "POST"])
+def resubmit(token):
+    """Customer-facing page behind the link in a 'we need more info' email or text."""
+    link = g.db.execute("SELECT * FROM customer_links WHERE token = ?", (token,)).fetchone()
+    if not link or link["used_at"] or link["expires_at"] < now_iso():
+        return render_template("resubmit.html", state="invalid")
+    case = load_case(link["case_id"])
+    customer = g.db.execute("SELECT * FROM customers WHERE id = ?", (case["customer_id"],)).fetchone()
+    ask = RESUBMIT_ASKS.get(link["purpose"], "Please upload a new photo of your ID and a selfie.")
+    if request.method == "GET":
+        return render_template("resubmit.html", state="form", name=customer["name"], ask=ask)
+    id_file, selfie_file = request.files.get("id_image"), request.files.get("selfie")
+    if not id_file or not id_file.filename or not selfie_file or not selfie_file.filename:
+        flash("Please add both photos.", "error")
+        return render_template("resubmit.html", state="form", name=customer["name"], ask=ask)
+    id_bytes, selfie_bytes = id_file.read(), selfie_file.read()
+    try:
+        face = face_match.compare(id_bytes, selfie_bytes)
+    except face_match.FaceMatchError as e:
+        flash(f"{e} Please try again with a clearer photo.", "error")
+        return render_template("resubmit.html", state="form", name=customer["name"], ask=ask)
+    pct = max(0, round(face["score"] * 100))
+    face["verdict"] = face_match.verdict(pct, int(get_setting(g.db, "face_match_pass_score")),
+                                         int(get_setting(g.db, "face_match_review_score")))
+    id_read = ocr.check(id_bytes, customer, int(get_setting(g.db, "ocr_name_match_pct")))
+    fc_id = save_face_check(case["id"], None, "customer_resubmit", face, id_bytes, id_file.mimetype,
+                            selfie_bytes, selfie_file.mimetype, id_read)
+    g.db.execute("UPDATE customer_links SET used_at = ? WHERE token = ?", (now_iso(), token))
+    new_status = "in_review" if case["status"] == "needs_info" else case["status"]
+    g.db.execute("UPDATE kyc_cases SET status = ? WHERE id = ?", (new_status, case["id"]))
+    audit(g.db, None, "customer_resubmitted", "kyc_case", case["id"], before={"status": case["status"]},
+          after={"status": new_status, "face_check_id": fc_id, "score": pct, "verdict": face["verdict"]},
+          reason="Customer uploaded new photos from the link we sent")
+    g.db.commit()
+    return render_template("resubmit.html", state="done", name=customer["name"], case_id=case["id"])
 
 
 @app.post("/kyc/<int:case_id>/claim")
@@ -417,6 +528,12 @@ def kyc_decide(case_id):
         g.db.execute("UPDATE customers SET status = ? WHERE id = ?", (customer_status, case["customer_id"]))
     audit(g.db, g.user["id"], f"kyc_{decision}", "kyc_case", case_id,
           before={"status": case["status"]}, after={"status": updates["status"], "reason": reason}, reason=note)
+    customer = g.db.execute("SELECT * FROM customers WHERE id = ?", (case["customer_id"],)).fetchone()
+    if decision == "request_info":
+        notify.send(g.db, case_id, customer, reason, sent_by=g.user["id"], link=customer_link(case_id, reason),
+                    note=request.form.get("customer_note", "").strip())
+    elif updates["status"] in ("approved", "rejected"):
+        notify.send(g.db, case_id, customer, updates["status"], sent_by=g.user["id"])
     g.db.commit()
     return redirect(url_for("kyc_case", case_id=case_id))
 
@@ -700,8 +817,6 @@ def forbidden(_e):
 
 
 if __name__ == "__main__":
-    import os
-
     from db import DB_PATH
 
     if not os.path.exists(DB_PATH):

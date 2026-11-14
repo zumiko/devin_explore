@@ -93,8 +93,9 @@ def migrate():
     conn = connect()
     with open(os.path.join(os.path.dirname(__file__), "schema.sql")) as f:
         conn.executescript(f.read())
-    if "ocr_json" not in [r[1] for r in conn.execute("PRAGMA table_info(face_checks)")]:
-        conn.execute("ALTER TABLE face_checks ADD COLUMN ocr_json TEXT")
+    for table, col in (("face_checks", "ocr_json"), ("customers", "phone")):
+        if col not in [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
     conn.executemany("INSERT OR IGNORE INTO settings VALUES (?, ?, ?)", SETTINGS)
     conn.commit()
     conn.close()
@@ -250,9 +251,9 @@ def build(db_path=DB_PATH):
 
     for c in customers:
         conn.execute(
-            "INSERT INTO customers VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO customers VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (c["id"], c["name"], c["email"], c["dob"], c["address"], c["state"], c["ssn_last4"],
-             c["account_type"], c["status"], iso(c["signup_at"])),
+             c["account_type"], c["status"], iso(c["signup_at"]), f"+1 212-555-01{c['id'] % 100:02d}"),
         )
     for k in kyc_cases:
         conn.execute(

@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS customers (
   ssn_last4 TEXT NOT NULL,
   account_type TEXT NOT NULL,
   status TEXT NOT NULL,
-  signup_at TEXT NOT NULL
+  signup_at TEXT NOT NULL,
+  phone TEXT
 );
 
 CREATE TABLE IF NOT EXISTS watchlist (
@@ -127,4 +128,30 @@ CREATE TABLE IF NOT EXISTS face_checks (
   selfie_face BLOB NOT NULL,
   details_json TEXT NOT NULL,
   ocr_json TEXT
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+  id INTEGER PRIMARY KEY,
+  case_id INTEGER REFERENCES kyc_cases(id),
+  customer_id INTEGER NOT NULL REFERENCES customers(id),
+  channel TEXT NOT NULL,
+  to_addr TEXT NOT NULL,
+  subject TEXT,
+  body TEXT NOT NULL,
+  status TEXT NOT NULL,
+  provider TEXT,
+  provider_id TEXT,
+  error TEXT,
+  ics TEXT,
+  sent_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS customer_links (
+  token TEXT PRIMARY KEY,
+  case_id INTEGER NOT NULL REFERENCES kyc_cases(id),
+  purpose TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at TEXT
 );

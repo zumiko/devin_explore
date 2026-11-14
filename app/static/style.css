@@ -62,3 +62,5 @@ form.upload label { display: flex; flex-direction: column; gap: 4px; }
 .zone.unsure { background: #fdecc8; }
 .zone.same { background: #b7e4c7; border-radius: 0 7px 7px 0; }
 .marker { position: absolute; top: -4px; width: 4px; height: 22px; background: #1f2a44; border-radius: 2px; transform: translateX(-2px); }
+.msgbody { white-space: pre-wrap; font: inherit; background: #f6f8fb; padding: 8px; border-radius: 4px; max-width: 520px; }
+form.row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }

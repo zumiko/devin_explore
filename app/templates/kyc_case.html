@@ -29,7 +29,7 @@
       <a href="{{ url_for('face_check_image', check_id=latest.id, kind='id') }}" target="_blank"><img class="doc" src="{{ url_for('face_check_image', check_id=latest.id, kind='id') }}" alt="ID photo"></a>
       <a href="{{ url_for('face_check_image', check_id=latest.id, kind='selfie') }}" target="_blank"><img class="doc" src="{{ url_for('face_check_image', check_id=latest.id, kind='selfie') }}" alt="Selfie"></a>
     </div>
-    <p class="muted small">{% if latest.source == 'signup' %}Submitted by the customer at signup{% else %}Uploaded by {{ latest.run_by_name }}{% endif %} &middot; <a href="#face-match">Face match result</a></p>
+    <p class="muted small">{% if latest.source == 'signup' %}Submitted by the customer at signup{% elif latest.source == 'customer_resubmit' %}Resubmitted by the customer from our link{% else %}Uploaded by {{ latest.run_by_name }}{% endif %} &middot; <a href="#face-match">Face match result</a></p>
     {% else %}
     <div class="docs"><div class="doc">ID photo<br><small>(not in demo data)</small></div><div class="doc">Selfie<br><small>(not in demo data)</small></div></div>
     <p class="muted small">Only some demo cases have sample documents. <a href="#face-match">Upload some</a> to try a face match.</p>
@@ -81,6 +81,8 @@
           </select>
         </label>
         <label>Note (required)<textarea name="note" rows="3" placeholder="What did you check and why did you decide this?"></textarea></label>
+        <label id="custnote">Message to the customer (optional, added to the email)<textarea name="customer_note" rows="2"></textarea></label>
+        <p class="muted small" id="autosend"></p>
         <button>Submit decision</button>
       </form>
       <script>
@@ -90,6 +92,12 @@
           let first = null;
           for (const o of sel.options) { o.hidden = o.dataset.d !== d; if (!o.hidden && !first) first = o; }
           sel.value = first.value;
+          document.getElementById('custnote').hidden = d !== 'request_info';
+          document.getElementById('autosend').textContent = {
+            request_info: 'Sends the customer an email and text with a link to upload new photos.',
+            approve: 'If this closes the case, the customer is emailed and texted that their account is active.',
+            reject: 'Emails the customer that we can\'t open an account (no reason given).',
+            escalate: 'Nothing is sent to the customer.'}[d];
         }
         syncReasons();
       </script>
@@ -97,6 +105,35 @@
     {% endif %}
   </section>
 </div>
+<section id="contact" class="facematch">
+  <h3>Customer contact</h3>
+  <p class="muted small">Emails and texts go out automatically at signup, when you ask for more info, and when the case is approved or rejected.
+    Email: <b>{{ 'live' if email_live else 'demo mode (outbox only)' }}</b> &middot; Texts: <b>{{ 'live' if sms_live else 'demo mode (outbox only)' }}</b>.
+    Phone on file: {{ customer.phone or 'none' }}.</p>
+  {% if messages %}
+  <table class="small">
+    <tr><th>When</th><th>Channel</th><th>To</th><th>Message</th><th>Status</th></tr>
+    {% for m in messages %}
+    <tr><td>{{ m.created_at|dt }}</td><td>{{ 'Email' if m.channel == 'email' else 'Text' }}</td><td>{{ m.to_addr }}</td>
+      <td><details><summary>{{ m.subject or m.body[:70] }}</summary><pre class="msgbody">{{ m.body }}</pre>
+        {% if m.ics %}<a href="{{ url_for('message_ics', message_id=m.id) }}">invite.ics</a>{% endif %}</details>
+        <span class="muted">{{ 'by ' ~ m.sent_by_name if m.sent_by_name else 'automatic' }}</span></td>
+      <td class="{{ 'bad' if m.status == 'failed' else ('good' if m.status == 'sent' else 'muted') }}">{{ m.status }}{% if m.error %}: {{ m.error }}{% endif %}</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="muted">No messages yet.</p>{% endif %}
+  {% if case.status not in ('approved', 'rejected') %}
+  <h4>Invite to a video call</h4>
+  <form method="post" action="{{ url_for('kyc_invite_call', case_id=case.id) }}" class="row">
+    <label>Date<input type="date" name="date" required></label>
+    <label>Time<input type="time" name="time" value="10:00" required></label>
+    <label>Length<select name="minutes"><option>15</option><option>30</option></select></label>
+    <label>Note (optional)<input name="note" size="30"></label>
+    <button>Send invite</button>
+  </form>
+  <p class="muted small">Sends an email with a calendar invite and a video link (Jitsi, no account needed), plus a text. With Microsoft connected this could be a Teams meeting.</p>
+  {% endif %}
+</section>
 <section id="face-match" class="facematch">
   <h3>Face match: ID photo vs selfie</h3>
   <p class="muted">The customer's ID photo and selfie are compared when they sign up. Here an open-source model (OpenCV YuNet + SFace) plays the part of the verification vendor:
@@ -116,7 +153,7 @@
         <span class="marker" style="left: {{ [pct, 100]|min }}%"></span>
       </div>
       <small>Under {{ face_review }}: likely different people &middot; {{ face_review }}&ndash;{{ face_pass - 1 }}: reviewer decides &middot; {{ face_pass }}+: likely same person (thresholds are on the Rules page)</small><br>
-      <small class="muted">{% if latest.source == 'signup' %}Checked automatically at signup{% else %}Re-run by {{ latest.run_by_name }}{% endif %} on {{ latest.created_at|dt }}. Faces detected: ID {{ d.id_faces_found }}, selfie {{ d.selfie_faces_found }}{% if d.id_faces_found > 1 or d.selfie_faces_found > 1 %} (used the largest){% endif %}. Raw similarity {{ '%.3f'|format(latest.score) }}.</small>
+      <small class="muted">{% if latest.source == 'signup' %}Checked automatically at signup{% elif latest.source == 'customer_resubmit' %}Checked automatically when the customer resubmitted{% else %}Re-run by {{ latest.run_by_name }}{% endif %} on {{ latest.created_at|dt }}. Faces detected: ID {{ d.id_faces_found }}, selfie {{ d.selfie_faces_found }}{% if d.id_faces_found > 1 or d.selfie_faces_found > 1 %} (used the largest){% endif %}. Raw similarity {{ '%.3f'|format(latest.score) }}.</small>
     </div>
   </div>
   {% set o = latest.ocr_json|fromjson if latest.ocr_json else None %}
@@ -138,7 +175,7 @@
     <table class="small">
       <tr><th>When</th><th>Source</th><th>Score</th><th>Result</th><th>Images</th></tr>
       {% for f in face_checks[1:] %}
-      <tr><td>{{ f.created_at|dt }}</td><td>{% if f.source == 'signup' %}Signup{% else %}Uploaded by {{ f.run_by_name }}{% endif %}</td><td>{{ [0, (f.score * 100)|round|int]|max }}</td><td>{{ f.verdict|label }}</td>
+      <tr><td>{{ f.created_at|dt }}</td><td>{% if f.source == 'signup' %}Signup{% elif f.source == 'customer_resubmit' %}Customer resubmitted{% else %}Uploaded by {{ f.run_by_name }}{% endif %}</td><td>{{ [0, (f.score * 100)|round|int]|max }}</td><td>{{ f.verdict|label }}</td>
         <td><a href="{{ url_for('face_check_image', check_id=f.id, kind='id') }}" target="_blank">ID</a> &middot; <a href="{{ url_for('face_check_image', check_id=f.id, kind='selfie') }}" target="_blank">selfie</a></td></tr>
       {% endfor %}
     </table>
