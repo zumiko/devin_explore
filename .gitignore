@@ -3,3 +3,4 @@ __pycache__/
 *.db
 .venv/
 app/models/
+app/entra_test_users.local.json

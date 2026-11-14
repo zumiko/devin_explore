@@ -21,14 +21,20 @@
     <a href="{{ url_for('ask_data') }}">Ask the data</a>
     <a href="{{ url_for('signup') }}" target="_blank">Customer signup &#8599;</a>
   </nav>
+  {% if sso %}
+  <form class="whoami" method="post" action="{{ url_for('logout') }}">
+    <label>Signed in with Microsoft as {{ me.name }} ({{ me.role|label }})</label> <button>Sign out</button>
+  </form>
+  {% else %}
   <form class="whoami" method="post" action="{{ url_for('switch_user') }}">
-    <label>Acting as</label>
+    <label title="Demo only. With Microsoft sign-in configured this is replaced by real accounts.">Acting as</label>
     <select name="user_id" onchange="this.form.submit()">
       {% for u in all_users %}
       <option value="{{ u.id }}" {% if u.id == me.id %}selected{% endif %}>{{ u.name }} ({{ u.role|label }})</option>
       {% endfor %}
     </select>
   </form>
+  {% endif %}
 </header>
 <main>
   {% with messages = get_flashed_messages(with_categories=true) %}
@@ -36,5 +42,10 @@
   {% endwith %}
   {% block content %}{% endblock %}
 </main>
+<script>
+  for (const f of document.querySelectorAll('form[method="post"], form[method="POST"]')) {
+    const i = document.createElement('input'); i.type = 'hidden'; i.name = 'csrf'; i.value = {{ csrf|tojson }}; f.appendChild(i);
+  }
+</script>
 </body>
 </html>

@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from flask import Flask, Response, abort, flash, g, redirect, render_template, request, session, url_for
 
 import ask
+import entra
 import face_match
 import notify
 import ocr
@@ -16,7 +17,16 @@ import seed
 from db import audit, connect, get_setting, now_iso
 
 app = Flask(__name__)
-app.secret_key = "demo-only-not-secret"
+app.secret_key = os.environ.get("SECRET_KEY") or "demo-only-not-secret"
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.environ.get("PUBLIC_BASE_URL", "").startswith("https://"),
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
+)
+if entra.enabled() and app.secret_key == "demo-only-not-secret":
+    raise SystemExit("Set SECRET_KEY when Microsoft sign-in is on.")
+PUBLIC_ENDPOINTS = {"static", "signup", "resubmit", "login", "auth_callback", "logged_out"}
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 
 ALL_ROLES = {"kyc_analyst", "kyc_senior", "compliance_lead", "support_agent", "support_lead",
@@ -50,6 +60,8 @@ OPEN_KYC = ("new", "in_review", "needs_info", "escalated", "pending_second_revie
 
 
 def can(perm):
+    if g.get("user") is None:
+        return False
     return g.user["role"] in PERMS[perm]
 
 
@@ -61,9 +73,18 @@ def require(perm):
 @app.before_request
 def load_user():
     g.db = connect()
-    uid = session.get("user_id", 1)
-    g.user = g.db.execute("SELECT * FROM users WHERE id = ?", (uid,)).fetchone()
-    g.users = g.db.execute("SELECT * FROM users ORDER BY id").fetchall()
+    g.sso = entra.enabled()
+    session.setdefault("csrf", secrets.token_urlsafe(24))
+    if request.method == "POST" and request.endpoint not in PUBLIC_ENDPOINTS:
+        if not secrets.compare_digest(request.form.get("csrf", ""), session["csrf"]):
+            abort(400, "Form expired or forged (CSRF check failed). Reload the page and try again.")
+    uid = session.get("user_id", None if g.sso else 1)
+    g.user = g.db.execute("SELECT * FROM users WHERE id = ?", (uid,)).fetchone() if uid else None
+    g.users = [] if g.sso else g.db.execute("SELECT * FROM users ORDER BY id").fetchall()
+    if g.user is None and request.endpoint not in PUBLIC_ENDPOINTS:
+        if g.sso:
+            return redirect(url_for("login", next=request.full_path))
+        abort(403)
 
 
 @app.teardown_request
@@ -76,9 +97,11 @@ def close_db(_exc):
 @app.context_processor
 def inject():
     pending = 0
+    if g.get("user") is None:
+        return {"can": can, "me": None, "all_users": [], "pending_count": 0, "sso": g.get("sso"), "csrf": session.get("csrf")}
     if can("approvals_view"):
         pending = len(pending_approvals_for(g.user))
-    return {"can": can, "me": g.user, "all_users": g.users, "pending_count": pending}
+    return {"can": can, "me": g.user, "all_users": g.users, "pending_count": pending, "sso": g.sso, "csrf": session["csrf"]}
 
 
 @app.template_filter("money")
@@ -123,12 +146,69 @@ def pending_approvals_for(user):
 
 @app.post("/switch-user")
 def switch_user():
+    if g.sso:
+        abort(403)
     session["user_id"] = int(request.form["user_id"])
     return redirect(request.referrer or url_for("index"))
 
 
+@app.get("/login")
+def login():
+    if not g.sso:
+        return redirect(url_for("index"))
+    nxt = request.args.get("next", "/")
+    session["next"] = nxt if nxt.startswith("/") and not nxt.startswith("//") else "/"
+    flow, url = entra.start_login(public_url("auth_callback"))
+    session["auth_flow"] = flow
+    return redirect(url)
+
+
+@app.get("/auth/callback")
+def auth_callback():
+    if not g.sso:
+        abort(404)
+    try:
+        ident = entra.finish_login(session.pop("auth_flow", {}), request.args)
+    except (PermissionError, ValueError) as e:
+        audit(g.db, None, "sign_in_failed", "user", 0, after={"error": str(e)[:200]})
+        g.db.commit()
+        abort(403, f"Microsoft sign-in failed: {e}")
+    if not ident["role"]:
+        audit(g.db, None, "sign_in_denied", "user", 0, after={"email": ident["email"], "reason": "no AcmePay group"})
+        g.db.commit()
+        abort(403, f"{ident['email']} signed in, but isn't in any AcmePay group in Entra. Ask IT for access.")
+    local = ident["email"].split("@")[0].lower()
+    row = g.db.execute("SELECT * FROM users WHERE lower(substr(email, 1, instr(email, '@') - 1)) = ?", (local,)).fetchone()
+    if row:
+        g.db.execute("UPDATE users SET role = ?, name = ? WHERE id = ?", (ident["role"], ident["name"] or row["name"], row["id"]))
+        uid = row["id"]
+    else:
+        uid = g.db.execute("INSERT INTO users (name, email, role, team) VALUES (?, ?, ?, 'Entra')",
+                           (ident["name"] or ident["email"], ident["email"], ident["role"])).lastrowid
+    audit(g.db, uid, "sign_in", "user", uid, after={"via": "entra", "groups": ident["groups"], "role": ident["role"]})
+    g.db.commit()
+    nxt = session.pop("next", "/")
+    session.clear()
+    session.permanent = True
+    session.update(user_id=uid, csrf=secrets.token_urlsafe(24))
+    return redirect(nxt)
+
+
+@app.post("/logout")
+def logout():
+    session.clear()
+    return redirect(entra.logout_url(public_url("logged_out")) if g.sso else url_for("index"))
+
+
+@app.get("/logged-out")
+def logged_out():
+    return "<p>You're signed out. <a href='/login'>Sign in again</a></p>"
+
+
 @app.post("/reset")
 def reset():
+    if g.sso:
+        require("settings_edit")
     g.db.close()
     seed.build()
     g.db = connect()
