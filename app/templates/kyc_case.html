@@ -54,6 +54,27 @@
     </div>
     {% endfor %}
 
+    {% if case.requires_second_review %}
+    <h3 id="source-of-funds">Source of funds</h3>
+    {% if case.source_of_funds %}
+      <p><b>{{ case.source_of_funds|capitalize }}</b>: {{ case.source_of_funds_note }}</p>
+    {% else %}
+      <p class="muted">{% if case.status in ('approved', 'rejected') %}Not recorded.{% else %}Not recorded yet. Required before this high-risk case can be approved.{% endif %}</p>
+    {% endif %}
+    {% if case.status not in ('approved', 'rejected') and can('kyc_work')
+          and (case.assigned_to == me.id or (case.status == 'pending_second_review' and can('kyc_second_review'))) %}
+    <form method="post" action="{{ url_for('kyc_source_of_funds', case_id=case.id) }}" class="stack">
+      <label>Where the money comes from
+        <select name="source_of_funds">
+          {% for s in sources_of_funds %}<option value="{{ s }}" {% if s == case.source_of_funds %}selected{% endif %}>{{ s|capitalize }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Note (required)<textarea name="source_of_funds_note" rows="2" placeholder="e.g. employer, business name, what you checked">{{ case.source_of_funds_note or '' }}</textarea></label>
+      <button>{{ 'Update' if case.source_of_funds else 'Save' }} source of funds</button>
+    </form>
+    {% endif %}
+    {% endif %}
+
     <h3>Decision</h3>
     {% if case.status in ('approved', 'rejected') %}
       <p><b>{{ case.decision|capitalize }}</b> by {{ case.decider or 'automatic rules (no human review)' }} on {{ case.decided_at|dt }}

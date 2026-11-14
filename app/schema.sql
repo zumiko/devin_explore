@@ -74,7 +74,9 @@ CREATE TABLE IF NOT EXISTS kyc_cases (
   decision_reason TEXT,
   decision_note TEXT,
   decided_by INTEGER REFERENCES users(id),
-  decided_at TEXT
+  decided_at TEXT,
+  source_of_funds TEXT,
+  source_of_funds_note TEXT
 );
 
 CREATE TABLE IF NOT EXISTS transactions (

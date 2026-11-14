@@ -98,7 +98,8 @@ def migrate():
     conn = connect()
     with open(os.path.join(os.path.dirname(__file__), "schema.sql")) as f:
         conn.executescript(f.read())
-    for table, col in (("face_checks", "ocr_json"), ("customers", "phone"), ("refunds", "risk_json")):
+    for table, col in (("face_checks", "ocr_json"), ("customers", "phone"), ("refunds", "risk_json"),
+                       ("kyc_cases", "source_of_funds"), ("kyc_cases", "source_of_funds_note")):
         if col not in [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
     conn.executemany("INSERT OR IGNORE INTO settings VALUES (?, ?, ?)", SETTINGS)
