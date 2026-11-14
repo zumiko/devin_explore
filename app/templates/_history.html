@@ -1,0 +1,13 @@
+<h3>History</h3>
+<table class="small">
+  <tr><th>When</th><th>Who</th><th>Action</th><th>Change</th><th>Reason</th></tr>
+  {% for h in history %}
+  <tr>
+    <td>{{ h.ts|dt }}</td>
+    <td>{{ h.actor or 'System' }}</td>
+    <td>{{ h.action|label }}</td>
+    <td class="mono">{% if h.before_json %}{{ h.before_json }} &rarr; {% endif %}{{ h.after_json or '' }}</td>
+    <td>{{ h.reason or '' }}</td>
+  </tr>
+  {% endfor %}
+</table>

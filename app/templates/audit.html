@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>Audit log</h1>
+<p class="tabs">
+  {% for t, name in [('', 'Everything'), ('kyc_case', 'KYC'), ('refund', 'Refunds'), ('feature_flag', 'Flags'), ('setting', 'Rules')] %}
+  <a href="?type={{ t }}" class="{% if t == entity_type %}active{% endif %}">{{ name }}</a>
+  {% endfor %}
+</p>
+<table class="small">
+  <tr><th>When</th><th>Who</th><th>Action</th><th>Record</th><th>Change</th><th>Reason</th></tr>
+  {% for h in rows %}
+  <tr>
+    <td>{{ h.ts|dt }}</td><td>{{ h.actor or 'System' }}</td><td>{{ h.action|label }}</td>
+    <td>{% if h.entity_type == 'kyc_case' %}<a href="{{ url_for('kyc_case', case_id=h.entity_id) }}">KYC #{{ h.entity_id }}</a>
+        {% elif h.entity_type == 'refund' %}<a href="{{ url_for('refund_detail', refund_id=h.entity_id) }}">Refund #{{ h.entity_id }}</a>
+        {% else %}{{ h.entity_type|label }} #{{ h.entity_id }}{% endif %}</td>
+    <td class="mono">{% if h.before_json %}{{ h.before_json }} &rarr; {% endif %}{{ h.after_json or '' }}</td>
+    <td>{{ h.reason or '' }}</td>
+  </tr>
+  {% endfor %}
+</table>
+<p class="muted">Showing the latest 300 entries.</p>
+{% endblock %}

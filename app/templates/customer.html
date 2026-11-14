@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>{{ c.name }}</h1>
+<p>{{ c.email }} &middot; {{ c.state }} &middot; {{ c.account_type }} &middot; status <b>{{ c.status|label }}</b>
+{% if can('customer_pii') %} &middot; DOB {{ c.dob }} &middot; SSN ***-**-{{ c.ssn_last4 }}{% endif %}
+{% if case and can('kyc_view') %} &middot; <a href="{{ url_for('kyc_case', case_id=case.id) }}">KYC case #{{ case.id }}</a>{% endif %}</p>
+
+<h2>Refunds</h2>
+<table>
+  <tr><th>#</th><th>When</th><th>Amount</th><th>Reason</th><th>Status</th><th>Requested by</th></tr>
+  {% for r in refunds %}
+  <tr><td><a href="{{ url_for('refund_detail', refund_id=r.id) }}">{{ r.id }}</a></td><td>{{ r.created_at|dt }}</td><td>{{ r.amount_cents|money }}</td><td>{{ r.reason|label }}</td><td>{{ r.status|label }}</td><td>{{ r.requester }}</td></tr>
+  {% else %}<tr><td colspan="6" class="muted">No refunds</td></tr>{% endfor %}
+</table>
+
+<h2>Recent transactions</h2>
+<table>
+  <tr><th>When</th><th>Type</th><th>Description</th><th>Amount</th><th>Refunded</th><th></th></tr>
+  {% for t in txns %}
+  <tr><td>{{ t.created_at|dt }}</td><td>{{ t.type|label }}</td><td>{{ t.description }}</td><td>{{ t.amount_cents|money }}</td>
+    <td>{% if t.refunded %}{{ t.refunded|money }}{% endif %}</td>
+    <td>{% if can('refund_request') and t.refunded < t.amount_cents %}<a href="{{ url_for('refund_new', txn_id=t.id) }}">Refund</a>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="6" class="muted">No transactions</td></tr>{% endfor %}
+</table>
+{% endblock %}

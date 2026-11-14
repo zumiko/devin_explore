@@ -1,0 +1,90 @@
+{% extends 'base.html' %}
+{% block content %}
+<p><a href="{{ url_for('kyc_list') }}">&larr; Queue</a></p>
+<h1>KYC case #{{ case.id }} — {{ customer.name }}</h1>
+<p>
+  Status: <b>{{ case.status|label }}</b> &middot;
+  Risk score: <span class="risk {% if case.risk_score >= 70 %}high{% elif case.risk_score >= 50 %}med{% endif %}">{{ case.risk_score }}</span> &middot;
+  Assigned: {{ case.assignee or 'nobody' }} &middot;
+  Due: {{ case.sla_due_at|dt }} &middot;
+  Vendor ref: {{ case.vendor_ref }}
+  {% if case.requires_second_review %}<span class="tag warn">needs 2 approvers</span>{% endif %}
+</p>
+<div class="cols">
+  <section>
+    <h3>Customer details</h3>
+    <table class="kv">
+      <tr><th>Name</th><td>{{ customer.name }}</td></tr>
+      <tr><th>Date of birth</th><td>{{ customer.dob }}</td></tr>
+      <tr><th>Address</th><td>{{ customer.address }}, {{ customer.state }}</td></tr>
+      <tr><th>Email</th><td>{{ customer.email }}</td></tr>
+      <tr><th>SSN</th><td>***-**-{{ customer.ssn_last4 }}</td></tr>
+      <tr><th>Account type</th><td>{{ customer.account_type }}</td></tr>
+      <tr><th>Signed up</th><td>{{ customer.signup_at|dt }}</td></tr>
+    </table>
+    <h3>Documents</h3>
+    <div class="docs"><div class="doc">ID photo<br><small>(placeholder)</small></div><div class="doc">Selfie<br><small>(placeholder)</small></div></div>
+  </section>
+  <section>
+    <h3>Why this was flagged (from MockVerify)</h3>
+    {% for f in flags %}
+    <div class="flagbox">
+      <b>{{ f.type|label }}</b>{% if f.match_pct %} — {{ f.match_pct }}% match{% endif %}<br>
+      {{ f.detail }}
+      {% if f.watchlist %}
+      <table class="kv small">
+        <tr><th></th><th>Customer</th><th>Watchlist entry</th></tr>
+        <tr><th>Name</th><td>{{ customer.name }}</td><td>{{ f.watchlist.name }}</td></tr>
+        <tr><th>DOB</th><td>{{ customer.dob }}</td><td>{{ f.watchlist.dob }}</td></tr>
+        <tr><th>Country</th><td>USA ({{ customer.state }})</td><td>{{ f.watchlist.country }}</td></tr>
+        <tr><th>List</th><td></td><td>{{ f.watchlist.list_name }}: {{ f.watchlist.reason }}</td></tr>
+      </table>
+      {% endif %}
+    </div>
+    {% endfor %}
+
+    <h3>Decision</h3>
+    {% if case.status in ('approved', 'rejected') %}
+      <p><b>{{ case.decision|capitalize }}</b> by {{ case.decider }} on {{ case.decided_at|dt }}
+      {% if case.first_decider %}(first approval: {{ case.first_decider }}){% endif %}<br>
+      Reason: {{ case.decision_reason|label }}<br>Note: {{ case.decision_note }}</p>
+    {% else %}
+      {% if case.status == 'pending_second_review' %}
+        <p class="flash">First approval by {{ case.first_decider }}: “{{ case.decision_note }}”. A different senior reviewer must confirm.</p>
+      {% endif %}
+      {% if case.assigned_to != me.id and case.status != 'pending_second_review' %}
+        <form method="post" action="{{ url_for('kyc_claim', case_id=case.id) }}"><button>Claim this case</button></form>
+      {% else %}
+      <form method="post" action="{{ url_for('kyc_decide', case_id=case.id) }}" class="stack">
+        <label>Decision
+          <select name="decision" id="decision" onchange="syncReasons()">
+            <option value="approve">Approve</option>
+            <option value="reject">Reject</option>
+            <option value="request_info">Ask customer for more info</option>
+            <option value="escalate">Escalate to senior</option>
+          </select>
+        </label>
+        <label>Reason
+          <select name="reason" id="reason">
+            {% for d, rs in reasons.items() %}{% for r in rs %}<option data-d="{{ d }}" value="{{ r }}">{{ r|label }}</option>{% endfor %}{% endfor %}
+          </select>
+        </label>
+        <label>Note (required)<textarea name="note" rows="3" placeholder="What did you check and why did you decide this?"></textarea></label>
+        <button>Submit decision</button>
+      </form>
+      <script>
+        function syncReasons() {
+          const d = document.getElementById('decision').value;
+          const sel = document.getElementById('reason');
+          let first = null;
+          for (const o of sel.options) { o.hidden = o.dataset.d !== d; if (!o.hidden && !first) first = o; }
+          sel.value = first.value;
+        }
+        syncReasons();
+      </script>
+      {% endif %}
+    {% endif %}
+  </section>
+</div>
+{% include '_history.html' %}
+{% endblock %}

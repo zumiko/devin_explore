@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>Waiting on my approval</h1>
+{% for a in approvals %}
+<div class="flagbox">
+  <b><a href="{{ url_for('refund_detail', refund_id=a.entity_id) }}">Refund #{{ a.entity_id }}</a> — {{ a.amount_cents|money }}</b>
+  to <a href="{{ url_for('customer', customer_id=a.customer_id) }}">{{ a.customer }}</a> &middot; {{ a.reason|label }} &middot;
+  requested by {{ a.requester }} &middot; step {{ a.step }} ({{ a.required_role|label }})
+  <p>“{{ a.note }}”</p>
+  <form method="post" action="{{ url_for('approval_decide', approval_id=a.id) }}" class="inline">
+    <input name="comment" placeholder="Comment (required to reject)" size="40">
+    <button name="decision" value="approved">Approve</button>
+    <button name="decision" value="rejected" class="danger">Reject</button>
+  </form>
+</div>
+{% else %}
+<p class="muted">Nothing waiting on you.</p>
+{% endfor %}
+{% endblock %}

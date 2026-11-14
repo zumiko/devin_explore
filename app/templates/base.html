@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{% block title %}AcmePay Internal Tools{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header>
+  <a class="brand" href="{{ url_for('index') }}">AcmePay Internal Tools</a>
+  <nav>
+    {% if can('kyc_view') %}<a href="{{ url_for('kyc_list') }}">KYC Queue</a>{% endif %}
+    {% if can('refund_view') %}<a href="{{ url_for('refunds') }}">Refunds</a>{% endif %}
+    {% if can('approvals_view') %}<a href="{{ url_for('approvals') }}">Approvals{% if pending_count %} <span class="pill">{{ pending_count }}</span>{% endif %}</a>{% endif %}
+    {% if can('refund_dashboard') %}<a href="{{ url_for('refund_dashboard') }}">Refund Dashboard</a>{% endif %}
+    <a href="{{ url_for('flags') }}">Feature Flags</a>
+    {% if can('customer_view') %}<a href="{{ url_for('customers') }}">Customers</a>{% endif %}
+    {% if can('audit_view') %}<a href="{{ url_for('audit_log') }}">Audit Log</a>{% endif %}
+    <a href="{{ url_for('settings') }}">Rules</a>
+  </nav>
+  <form class="whoami" method="post" action="{{ url_for('switch_user') }}">
+    <label>Acting as</label>
+    <select name="user_id" onchange="this.form.submit()">
+      {% for u in all_users %}
+      <option value="{{ u.id }}" {% if u.id == me.id %}selected{% endif %}>{{ u.name }} ({{ u.role|label }})</option>
+      {% endfor %}
+    </select>
+  </form>
+</header>
+<main>
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>
