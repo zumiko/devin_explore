@@ -19,6 +19,7 @@ A single Flask app with plain server-rendered pages, running on one SQLite datab
 **Apps**
 
 - **KYC review queue:** case list sorted by risk and deadline; a case page with customer details, MockVerify flags and a side-by-side watchlist comparison. Claim, then approve / reject / request info / escalate. A reason and note are required. High-risk cases need a second, different senior reviewer.
+- **Face match (KYC case page):** upload a fake passport/ID photo and a selfie; an open-source model (OpenCV YuNet face detector + SFace face recognizer, code in `app/face_match.py`) finds both faces and scores how alike they are (0-100). The score maps to "likely same person / reviewer decides / likely different people" using thresholds on the Rules page, and each run is saved and audit-logged. This stands in for the face-match step a KYC vendor would run; it has no liveness or document-authenticity checks. Model files (~40 MB) download into `app/models/` on first use.
 - **Refunds:** start from a customer's transaction. Up to $50 is approved automatically, up to $500 needs a support lead, and above that a lead and then finance. You can't approve your own request. The dashboard shows weekly refunds by reason, by agent, repeat refunders and recent flag changes.
 - **Feature flags:** turn flags on or off and set the rollout %. Critical flags can only be changed by engineering, and require a reason.
 

@@ -1,4 +1,4 @@
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
   email TEXT NOT NULL,
@@ -6,7 +6,7 @@ CREATE TABLE users (
   team TEXT NOT NULL
 );
 
-CREATE TABLE customers (
+CREATE TABLE IF NOT EXISTS customers (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
   email TEXT NOT NULL,
@@ -19,7 +19,7 @@ CREATE TABLE customers (
   signup_at TEXT NOT NULL
 );
 
-CREATE TABLE watchlist (
+CREATE TABLE IF NOT EXISTS watchlist (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
   dob TEXT NOT NULL,
@@ -28,7 +28,7 @@ CREATE TABLE watchlist (
   reason TEXT NOT NULL
 );
 
-CREATE TABLE kyc_cases (
+CREATE TABLE IF NOT EXISTS kyc_cases (
   id INTEGER PRIMARY KEY,
   customer_id INTEGER NOT NULL REFERENCES customers(id),
   status TEXT NOT NULL,
@@ -47,7 +47,7 @@ CREATE TABLE kyc_cases (
   decided_at TEXT
 );
 
-CREATE TABLE transactions (
+CREATE TABLE IF NOT EXISTS transactions (
   id INTEGER PRIMARY KEY,
   customer_id INTEGER NOT NULL REFERENCES customers(id),
   type TEXT NOT NULL,
@@ -56,7 +56,7 @@ CREATE TABLE transactions (
   created_at TEXT NOT NULL
 );
 
-CREATE TABLE refunds (
+CREATE TABLE IF NOT EXISTS refunds (
   id INTEGER PRIMARY KEY,
   transaction_id INTEGER NOT NULL REFERENCES transactions(id),
   customer_id INTEGER NOT NULL REFERENCES customers(id),
@@ -69,7 +69,7 @@ CREATE TABLE refunds (
   resolved_at TEXT
 );
 
-CREATE TABLE approvals (
+CREATE TABLE IF NOT EXISTS approvals (
   id INTEGER PRIMARY KEY,
   entity_type TEXT NOT NULL,
   entity_id INTEGER NOT NULL,
@@ -81,7 +81,7 @@ CREATE TABLE approvals (
   comment TEXT
 );
 
-CREATE TABLE feature_flags (
+CREATE TABLE IF NOT EXISTS feature_flags (
   id INTEGER PRIMARY KEY,
   key TEXT NOT NULL UNIQUE,
   description TEXT NOT NULL,
@@ -93,7 +93,7 @@ CREATE TABLE feature_flags (
   updated_at TEXT NOT NULL
 );
 
-CREATE TABLE audit_log (
+CREATE TABLE IF NOT EXISTS audit_log (
   id INTEGER PRIMARY KEY,
   ts TEXT NOT NULL,
   actor_id INTEGER REFERENCES users(id),
@@ -105,8 +105,24 @@ CREATE TABLE audit_log (
   reason TEXT
 );
 
-CREATE TABLE settings (
+CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,
   description TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS face_checks (
+  id INTEGER PRIMARY KEY,
+  case_id INTEGER NOT NULL REFERENCES kyc_cases(id),
+  run_by INTEGER NOT NULL REFERENCES users(id),
+  created_at TEXT NOT NULL,
+  score REAL NOT NULL,
+  verdict TEXT NOT NULL,
+  id_image BLOB NOT NULL,
+  id_image_type TEXT NOT NULL,
+  selfie_image BLOB NOT NULL,
+  selfie_image_type TEXT NOT NULL,
+  id_face BLOB NOT NULL,
+  selfie_face BLOB NOT NULL,
+  details_json TEXT NOT NULL
 );

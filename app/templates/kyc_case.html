@@ -23,7 +23,17 @@
       <tr><th>Signed up</th><td>{{ customer.signup_at|dt }}</td></tr>
     </table>
     <h3>Documents</h3>
-    <div class="docs"><div class="doc">ID photo<br><small>(placeholder)</small></div><div class="doc">Selfie<br><small>(placeholder)</small></div></div>
+    {% set latest = face_checks[0] if face_checks else None %}
+    {% if latest %}
+    <div class="docs">
+      <a href="{{ url_for('face_check_image', check_id=latest.id, kind='id') }}" target="_blank"><img class="doc" src="{{ url_for('face_check_image', check_id=latest.id, kind='id') }}" alt="ID photo"></a>
+      <a href="{{ url_for('face_check_image', check_id=latest.id, kind='selfie') }}" target="_blank"><img class="doc" src="{{ url_for('face_check_image', check_id=latest.id, kind='selfie') }}" alt="Selfie"></a>
+    </div>
+    <p class="muted small"><a href="#face-match">Face match result below</a></p>
+    {% else %}
+    <div class="docs"><div class="doc">ID photo<br><small>(none uploaded)</small></div><div class="doc">Selfie<br><small>(none uploaded)</small></div></div>
+    <p class="muted small"><a href="#face-match">Upload them below</a> to run a face match.</p>
+    {% endif %}
   </section>
   <section>
     <h3>Why this was flagged (from MockVerify)</h3>
@@ -86,5 +96,45 @@
     {% endif %}
   </section>
 </div>
+<section id="face-match" class="facematch">
+  <h3>Face match: ID photo vs selfie</h3>
+  <p class="muted">Upload a (fake) passport or ID photo and a selfie. An open-source model (OpenCV YuNet + SFace) finds the face in each and scores how alike they are, from 0 to 100.
+    In production this score would come from the KYC vendor (e.g. Persona). This demo has no liveness or fake-ID checks.</p>
+  <form method="post" enctype="multipart/form-data" action="{{ url_for('kyc_face_match', case_id=case.id) }}" class="inline upload">
+    <label>ID / passport photo <input type="file" name="id_image" accept="image/*" required></label>
+    <label>Selfie <input type="file" name="selfie" accept="image/*" capture="user" required></label>
+    <button>Compare faces</button>
+  </form>
+  {% if latest %}
+  {% set pct = [0, (latest.score * 100)|round|int]|max %}
+  {% set d = latest.details_json|fromjson %}
+  <div class="matchresult {{ latest.verdict }}">
+    <div class="matchscore"><span class="big">{{ pct }}</span>/100<br><b>{{ latest.verdict|label|capitalize }}</b></div>
+    <div class="faces">
+      <figure><img src="{{ url_for('face_check_image', check_id=latest.id, kind='id_face') }}" alt="Face from ID"><figcaption>Face found on ID</figcaption></figure>
+      <figure><img src="{{ url_for('face_check_image', check_id=latest.id, kind='selfie_face') }}" alt="Face from selfie"><figcaption>Face found in selfie</figcaption></figure>
+    </div>
+    <div class="scale">
+      <div class="bar">
+        <span class="zone diff" style="width: {{ face_review }}%"></span><span class="zone unsure" style="width: {{ face_pass - face_review }}%"></span><span class="zone same" style="width: {{ 100 - face_pass }}%"></span>
+        <span class="marker" style="left: {{ [pct, 100]|min }}%"></span>
+      </div>
+      <small>Under {{ face_review }}: likely different people &middot; {{ face_review }}&ndash;{{ face_pass - 1 }}: reviewer decides &middot; {{ face_pass }}+: likely same person (thresholds are on the Rules page)</small><br>
+      <small class="muted">Run by {{ latest.run_by_name }} on {{ latest.created_at|dt }}. Faces detected: ID {{ d.id_faces_found }}, selfie {{ d.selfie_faces_found }}{% if d.id_faces_found > 1 or d.selfie_faces_found > 1 %} (used the largest){% endif %}. Raw similarity {{ '%.3f'|format(latest.score) }}.</small>
+    </div>
+  </div>
+  {% if face_checks|length > 1 %}
+  <details><summary>Earlier face matches on this case ({{ face_checks|length - 1 }})</summary>
+    <table class="small">
+      <tr><th>When</th><th>Who</th><th>Score</th><th>Result</th><th>Images</th></tr>
+      {% for f in face_checks[1:] %}
+      <tr><td>{{ f.created_at|dt }}</td><td>{{ f.run_by_name }}</td><td>{{ [0, (f.score * 100)|round|int]|max }}</td><td>{{ f.verdict|label }}</td>
+        <td><a href="{{ url_for('face_check_image', check_id=f.id, kind='id') }}" target="_blank">ID</a> &middot; <a href="{{ url_for('face_check_image', check_id=f.id, kind='selfie') }}" target="_blank">selfie</a></td></tr>
+      {% endfor %}
+    </table>
+  </details>
+  {% endif %}
+  {% endif %}
+</section>
 {% include '_history.html' %}
 {% endblock %}

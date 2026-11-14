@@ -1,13 +1,15 @@
 import json
 from datetime import datetime, timedelta
 
-from flask import Flask, abort, flash, g, redirect, render_template, request, session, url_for
+from flask import Flask, Response, abort, flash, g, redirect, render_template, request, session, url_for
 
+import face_match
 import seed
 from db import audit, connect, get_setting, now_iso
 
 app = Flask(__name__)
 app.secret_key = "demo-only-not-secret"
+app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 
 ALL_ROLES = {"kyc_analyst", "kyc_senior", "compliance_lead", "support_agent", "support_lead",
              "finance", "pm", "engineer", "admin"}
@@ -192,8 +194,73 @@ def kyc_case(case_id):
     for f in flags:
         if f.get("watchlist_id"):
             f["watchlist"] = g.db.execute("SELECT * FROM watchlist WHERE id = ?", (f["watchlist_id"],)).fetchone()
+    face_checks = g.db.execute(
+        "SELECT f.id, f.created_at, f.score, f.verdict, f.details_json, u.name AS run_by_name FROM face_checks f"
+        " JOIN users u ON u.id = f.run_by WHERE f.case_id = ? ORDER BY f.id DESC",
+        (case_id,),
+    ).fetchall()
     return render_template("kyc_case.html", case=case, customer=customer, flags=flags,
-                           reasons=KYC_REASONS, history=history("kyc_case", case_id))
+                           reasons=KYC_REASONS, history=history("kyc_case", case_id), face_checks=face_checks,
+                           face_pass=int(get_setting(g.db, "face_match_pass_score")),
+                           face_review=int(get_setting(g.db, "face_match_review_score")))
+
+
+def face_verdict(score_pct):
+    if score_pct >= int(get_setting(g.db, "face_match_pass_score")):
+        return "likely_same_person"
+    if score_pct >= int(get_setting(g.db, "face_match_review_score")):
+        return "reviewer_decides"
+    return "likely_different_people"
+
+
+@app.post("/kyc/<int:case_id>/face-match")
+def kyc_face_match(case_id):
+    require("kyc_view")
+    load_case(case_id)
+    id_file, selfie_file = request.files.get("id_image"), request.files.get("selfie")
+    if not id_file or not id_file.filename or not selfie_file or not selfie_file.filename:
+        flash("Upload both an ID photo and a selfie.", "error")
+        return redirect(url_for("kyc_case", case_id=case_id))
+    id_bytes, selfie_bytes = id_file.read(), selfie_file.read()
+    try:
+        result = face_match.compare(id_bytes, selfie_bytes)
+    except face_match.FaceMatchError as e:
+        flash(f"Face match failed: {e}", "error")
+        return redirect(url_for("kyc_case", case_id=case_id))
+    score_pct = max(0, round(result["score"] * 100))
+    verdict = face_verdict(score_pct)
+    details = {k: result[k] for k in ("id_faces_found", "selfie_faces_found",
+                                      "id_face_confidence", "selfie_face_confidence")}
+    details["model"] = "OpenCV YuNet + SFace (cosine similarity)"
+    cur = g.db.execute(
+        "INSERT INTO face_checks (case_id, run_by, created_at, score, verdict, id_image, id_image_type,"
+        " selfie_image, selfie_image_type, id_face, selfie_face, details_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (case_id, g.user["id"], now_iso(), result["score"], verdict, id_bytes, id_file.mimetype or "image/jpeg",
+         selfie_bytes, selfie_file.mimetype or "image/jpeg", result["id_face_jpg"], result["selfie_face_jpg"],
+         json.dumps(details)),
+    )
+    audit(g.db, g.user["id"], "face_match_run", "kyc_case", case_id,
+          after={"face_check_id": cur.lastrowid, "score": score_pct, "verdict": verdict})
+    g.db.commit()
+    flash(f"Face match score {score_pct}/100: {label(verdict)}.")
+    return redirect(url_for("kyc_case", case_id=case_id) + "#face-match")
+
+
+FACE_IMAGE_COLUMNS = {"id": ("id_image", "id_image_type"), "selfie": ("selfie_image", "selfie_image_type"),
+                      "id_face": ("id_face", None), "selfie_face": ("selfie_face", None)}
+
+
+@app.get("/kyc/face-check/<int:check_id>/<kind>")
+def face_check_image(check_id, kind):
+    require("kyc_view")
+    if kind not in FACE_IMAGE_COLUMNS:
+        abort(404)
+    col, type_col = FACE_IMAGE_COLUMNS[kind]
+    mime = type_col or "'image/jpeg'"
+    row = g.db.execute(f"SELECT {col} AS data, {mime} AS mime FROM face_checks WHERE id = ?", (check_id,)).fetchone()
+    if not row:
+        abort(404)
+    return Response(row["data"], mimetype=row["mime"])
 
 
 @app.post("/kyc/<int:case_id>/claim")
@@ -553,4 +620,6 @@ if __name__ == "__main__":
 
     if not os.path.exists(DB_PATH):
         seed.build()
+    else:
+        seed.migrate()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)

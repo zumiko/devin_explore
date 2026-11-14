@@ -65,11 +65,23 @@ SETTINGS = [
     ("refund_lead_max_cents", "50000", "Refunds up to this amount need a support lead; above it, lead then finance"),
     ("kyc_second_review_risk_score", "70", "KYC cases at or above this risk score need a second reviewer to approve"),
     ("kyc_sla_hours", "48", "Target hours to resolve a KYC case"),
+    ("face_match_pass_score", "45", "Face match scores (0-100) at or above this count as likely the same person"),
+    ("face_match_review_score", "30", "Face match scores from this up to the pass score need a reviewer's judgment; below it, likely different people"),
 ]
 
 
 def iso(dt):
     return dt.isoformat(timespec="seconds")
+
+
+def migrate():
+    """Bring a database created by an older version up to date without wiping its data."""
+    conn = connect()
+    with open(os.path.join(os.path.dirname(__file__), "schema.sql")) as f:
+        conn.executescript(f.read())
+    conn.executemany("INSERT OR IGNORE INTO settings VALUES (?, ?, ?)", SETTINGS)
+    conn.commit()
+    conn.close()
 
 
 def build(db_path=DB_PATH):
