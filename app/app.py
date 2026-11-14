@@ -62,7 +62,7 @@ KYC_REASONS = {
     "escalate": ["complex_match", "possible_pep", "needs_senior_judgment"],
 }
 REFUND_REASONS = seed.REFUND_REASONS
-SIMPLE_HOME_ROLES = {"kyc_analyst"}
+SIMPLE_HOME_ROLES = {"kyc_analyst", "support_agent"}
 APPS = [
     {"perm": "kyc_view", "endpoint": "kyc_list", "name": "KYC review queue", "desc": "Identity checks the automatic rules couldn't clear."},
     {"perm": "kyc_dashboard", "endpoint": "kyc_dashboard", "name": "KYC dashboard", "desc": "Signup trends and reviewer performance."},
@@ -265,7 +265,7 @@ def index():
     unassigned = db.execute(
         "SELECT k.*, c.name FROM kyc_cases k JOIN customers c ON c.id = k.customer_id"
         " WHERE k.assigned_to IS NULL AND k.status = 'new' ORDER BY k.risk_score DESC, k.sla_due_at LIMIT 10"
-    ).fetchall() if g.user["role"] in SIMPLE_HOME_ROLES else []
+    ).fetchall() if g.user["role"] in SIMPLE_HOME_ROLES and can("kyc_view") else []
     return render_template("index.html", stats=stats, my_cases=my_cases, unassigned=unassigned, now=now_iso(), approvals=approvals, my_refunds=my_refunds,
                            my_flags=my_flags, apps=[a for a in APPS if can(a["perm"])])
 

@@ -1,13 +1,24 @@
 {% extends 'base.html' %}
 {% block content %}
 <h1>Hi {{ me.name.split()[0] }}</h1>
-<p class="muted">{{ me.role|label|capitalize }} · {{ me.team }}. {% if simple %}Your cases and new ones to pick up.{% else %}You only see the apps your role uses.{% endif %}{% if not sso %} Switch people in the top right to compare roles.{% endif %}</p>
-{% if simple %}
+<p class="muted">{{ me.role|label|capitalize }} · {{ me.team }}. {% if simple and can('kyc_view') %}Your cases and new ones to pick up.{% elif simple %}Your refunds and customer lookup.{% else %}You only see the apps your role uses.{% endif %}{% if not sso %} Switch people in the top right to compare roles.{% endif %}</p>
+{% if simple and can('kyc_view') %}
 <div class="cards">
   <div class="card"><div class="big">{{ my_cases|length }}</div>cases assigned to me</div>
   <div class="card"><div class="big bad">{{ my_cases|selectattr('sla_due_at', 'lt', now)|list|length }}</div>past deadline</div>
   <div class="card"><div class="big">{{ unassigned|length }}</div>waiting to be picked up</div>
 </div>
+{% elif simple %}
+<div class="cards">
+  <div class="card"><div class="big">{{ my_refunds|selectattr('status', 'eq', 'pending_approval')|list|length }}</div>of my refunds waiting for approval</div>
+  <div class="card"><div class="big">{{ my_refunds|selectattr('status', 'eq', 'sent')|list|length }}</div>of my recent refunds sent</div>
+</div>
+<h2>Refund a customer</h2>
+<form class="row" method="get" action="{{ url_for('customers') }}">
+  <input name="q" placeholder="Customer name, email or ID" required autofocus>
+  <button>Find customer</button>
+</form>
+<p class="muted">Open the customer, then click Refund next to the charge.</p>
 {% else %}
 <div class="cards">
   {% if can('kyc_view') %}<div class="card"><div class="big">{{ stats.kyc_open }}</div>open KYC cases<br><span class="bad">{{ stats.kyc_overdue }} past deadline</span></div>{% endif %}
@@ -35,7 +46,7 @@
 <h2>My recent refunds</h2>
 <table>
   <tr><th>Customer</th><th>Amount</th><th>Reason</th><th>Status</th><th>When</th></tr>
-  {% for r in my_refunds %}<tr><td>{{ r.name }}</td><td>{{ r.amount_cents|money }}</td><td>{{ r.reason|label }}</td><td>{{ r.status|label }}</td><td>{{ r.created_at|dt }}</td></tr>{% endfor %}
+  {% for r in my_refunds %}<tr><td><a href="{{ url_for('refund_detail', refund_id=r.id) }}">{{ r.name }}</a></td><td>{{ r.amount_cents|money }}</td><td>{{ r.reason|label }}</td><td>{{ r.status|label }}</td><td>{{ r.created_at|dt }}</td></tr>{% endfor %}
 </table>
 {% endif %}
 {% if my_flags %}
