@@ -33,28 +33,7 @@ if entra.enabled() and app.secret_key == "demo-only-not-secret":
 PUBLIC_ENDPOINTS = {"static", "signup", "resubmit", "login", "auth_callback", "logged_out"}
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 
-ALL_ROLES = {"kyc_analyst", "kyc_senior", "compliance_lead", "support_agent", "support_lead",
-             "finance", "pm", "engineer", "admin"}
-KYC_ROLES = {"kyc_analyst", "kyc_senior", "compliance_lead", "admin"}
-PERMS = {
-    "kyc_view": KYC_ROLES,
-    "kyc_second_review": {"kyc_senior", "compliance_lead", "admin"},
-    "customer_view": KYC_ROLES | {"support_agent", "support_lead", "finance"},
-    "customer_pii": KYC_ROLES,
-    "refund_view": {"support_agent", "support_lead", "finance", "admin"},
-    "refund_request": {"support_agent", "support_lead", "admin"},
-    "ask_data": ALL_ROLES,
-    "kyc_dashboard": {"compliance_lead", "admin"},
-    "kyc_view_all": {"kyc_senior", "compliance_lead", "admin"},
-    "refund_dashboard": {"support_lead", "finance", "pm", "admin"},
-    "approvals_view": {"support_lead", "finance", "admin"},
-    "flag_view": {"pm", "engineer", "admin"},
-    "settings_view": {"compliance_lead", "finance", "admin"},
-    "flag_edit": {"pm", "engineer", "admin"},
-    "flag_edit_critical": {"engineer", "admin"},
-    "audit_view": {"compliance_lead", "support_lead", "finance", "engineer", "admin"},
-    "settings_edit": {"admin"},
-}
+from access import PERMISSIONS, ROLES, LOCKED, setting_perm  # noqa: E402
 KYC_REASONS = {
     "approve": ["false_positive_cleared", "docs_verified", "additional_docs_received"],
     "reject": ["identity_not_verified", "watchlist_confirmed", "fraud_suspected"],
@@ -73,6 +52,7 @@ APPS = [
     {"perm": "customer_view", "endpoint": "customers", "name": "Customers", "desc": "Customer profiles and history."},
     {"perm": "audit_view", "endpoint": "audit_log", "name": "Audit log", "desc": "Who changed what, when, and why."},
     {"perm": "settings_view", "endpoint": "settings", "name": "Rules", "desc": "Thresholds and limits the apps enforce."},
+    {"perm": "users_manage", "endpoint": "admin_access", "name": "Users & access", "desc": "Who has which role and what each role can do."},
     {"perm": "ask_data", "endpoint": "ask_data", "name": "Ask the data", "desc": "Questions in plain English, within your access."},
 ]
 OPEN_KYC = ("new", "in_review", "needs_info", "escalated", "pending_second_review")
@@ -81,7 +61,13 @@ OPEN_KYC = ("new", "in_review", "needs_info", "escalated", "pending_second_revie
 def can(perm):
     if g.get("user") is None:
         return False
-    return g.user["role"] in PERMS[perm]
+    if "perms" not in g:
+        g.perms = role_perms(g.user["role"])
+    return perm in g.perms
+
+
+def role_perms(role):
+    return {r[0] for r in g.db.execute("SELECT perm FROM role_permissions WHERE role = ?", (role,))}
 
 
 def require(perm):
@@ -161,7 +147,7 @@ def pending_approvals_for(user):
         " JOIN customers c ON c.id = r.customer_id JOIN users u ON u.id = r.requested_by"
         " WHERE a.status = 'pending' ORDER BY r.created_at"
     ).fetchall()
-    return [r for r in rows if user["role"] == "admin" or r["required_role"] == user["role"]]
+    return [r for r in rows if r["required_role"] == user["role"]]
 
 
 @app.post("/switch-user")
@@ -228,7 +214,7 @@ def logged_out():
 @app.post("/reset")
 def reset():
     if g.sso:
-        require("settings_edit")
+        require("users_manage")
     g.db.close()
     seed.build()
     g.db = connect()
@@ -266,7 +252,19 @@ def index():
         "SELECT k.*, c.name FROM kyc_cases k JOIN customers c ON c.id = k.customer_id"
         " WHERE k.assigned_to IS NULL AND k.status = 'new' ORDER BY k.risk_score DESC, k.sla_due_at LIMIT 10"
     ).fetchall() if g.user["role"] in SIMPLE_HOME_ROLES and can("kyc_view") else []
-    return render_template("index.html", stats=stats, my_cases=my_cases, unassigned=unassigned, now=now_iso(), approvals=approvals, my_refunds=my_refunds,
+    team = {}
+    if can("kyc_team_view"):
+        q = "SELECT k.*, c.name, u.name AS assignee, f.name AS first_decider FROM kyc_cases k JOIN customers c ON c.id = k.customer_id" \
+            " LEFT JOIN users u ON u.id = k.assigned_to LEFT JOIN users f ON f.id = k.first_decision_by WHERE "
+        team["signoff"] = db.execute(q + "k.status = 'pending_second_review' AND k.first_decision_by != ? ORDER BY k.sla_due_at",
+                                     (g.user["id"],)).fetchall()
+        team["escalated"] = db.execute(q + "k.status = 'escalated' ORDER BY k.sla_due_at").fetchall()
+        team["overdue"] = db.execute(q + f"k.status IN {OPEN_KYC} AND k.sla_due_at < ? ORDER BY k.sla_due_at LIMIT 15",
+                                     (now_iso(),)).fetchall()
+        team["holding"] = db.execute(
+            f"SELECT u.name, COUNT(*) AS open, SUM(k.sla_due_at < ?) AS overdue FROM kyc_cases k JOIN users u ON u.id = k.assigned_to"
+            f" WHERE k.status IN {OPEN_KYC} GROUP BY u.id ORDER BY open DESC", (now_iso(),)).fetchall()
+    return render_template("index.html", stats=stats, my_cases=my_cases, team=team, unassigned=unassigned, now=now_iso(), approvals=approvals, my_refunds=my_refunds,
                            my_flags=my_flags, apps=[a for a in APPS if can(a["perm"])])
 
 
@@ -346,7 +344,7 @@ def kyc_case(case_id):
 
 @app.post("/kyc/<int:case_id>/face-match")
 def kyc_face_match(case_id):
-    require("kyc_view")
+    require("kyc_work")
     case = load_case(case_id)
     customer = g.db.execute("SELECT * FROM customers WHERE id = ?", (case["customer_id"],)).fetchone()
     id_file, selfie_file = request.files.get("id_image"), request.files.get("selfie")
@@ -515,7 +513,7 @@ def face_check_image(check_id, kind):
 
 @app.post("/kyc/<int:case_id>/invite-call")
 def kyc_invite_call(case_id):
-    require("kyc_view")
+    require("kyc_work")
     case = load_case(case_id)
     try:
         start = datetime.fromisoformat(f"{request.form['date']}T{request.form['time']}").replace(
@@ -590,7 +588,7 @@ def resubmit(token):
 
 @app.post("/kyc/<int:case_id>/claim")
 def kyc_claim(case_id):
-    require("kyc_view")
+    require("kyc_work")
     case = load_case(case_id)
     if case["status"] == "escalated" and not can("kyc_second_review"):
         flash("Escalated cases can only be picked up by a senior reviewer.", "error")
@@ -606,7 +604,7 @@ def kyc_claim(case_id):
 
 @app.post("/kyc/<int:case_id>/decide")
 def kyc_decide(case_id):
-    require("kyc_view")
+    require("kyc_work")
     case = load_case(case_id)
     decision = request.form.get("decision")
     reason = request.form.get("reason", "")
@@ -1009,7 +1007,7 @@ def flag_update(flag_id):
 @app.get("/audit")
 def audit_log():
     require("audit_view")
-    entity_type = request.args.get("type", "")
+    entity_type = request.args.get("type", "") if can("audit_view_all") else "feature_flag"
     where = "WHERE entity_type = ?" if entity_type else ""
     rows = g.db.execute(
         f"SELECT a.*, u.name AS actor FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id {where}"
@@ -1024,8 +1022,10 @@ def settings():
     require("settings_view")
     rows = g.db.execute("SELECT * FROM settings").fetchall()
     if request.method == "POST":
-        require("settings_edit")
-        for row in rows:
+        editable = [row for row in rows if can(setting_perm(row["key"]))]
+        if not editable:
+            abort(403)
+        for row in editable:
             new = request.form.get(row["key"], "").strip()
             if new.isdigit() and new != row["value"]:
                 g.db.execute("UPDATE settings SET value = ? WHERE key = ?", (new, row["key"]))
@@ -1034,7 +1034,63 @@ def settings():
         g.db.commit()
         flash("Settings saved.")
         return redirect(url_for("settings"))
-    return render_template("settings.html", rows=rows)
+    return render_template("settings.html", rows=rows, editable={r["key"] for r in rows if can(setting_perm(r["key"]))})
+
+
+# ---------- Admin: people and access ----------
+
+def entra_group(role):
+    return next((grp for grp, r in entra.GROUP_ROLES.items() if r == role), "")
+
+
+@app.get("/admin/access")
+def admin_access():
+    require("users_manage")
+    granted = {}
+    for role, perm in g.db.execute("SELECT role, perm FROM role_permissions"):
+        granted.setdefault(role, set()).add(perm)
+    users = g.db.execute("SELECT * FROM users ORDER BY id").fetchall()
+    apps_for = {r: [a["name"] for a in APPS if a["perm"] in granted.get(r, set())] for r, _, _ in ROLES}
+    return render_template("admin_access.html", users=users, roles=ROLES, perms=PERMISSIONS, granted=granted,
+                           apps_for=apps_for, group=entra_group, locked=LOCKED)
+
+
+@app.post("/admin/users/<int:user_id>/role")
+def admin_set_role(user_id):
+    require("users_manage")
+    if g.sso:
+        abort(403, "With Microsoft sign-in on, roles come from Entra groups. Change the person's group in Entra.")
+    role = request.form.get("role")
+    user = g.db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user or role not in dict((r[0], r) for r in ROLES):
+        abort(400)
+    if user_id == g.user["id"] and role != user["role"]:
+        flash("You can't change your own role. Ask another admin.", "error")
+    elif role != user["role"]:
+        g.db.execute("UPDATE users SET role = ? WHERE id = ?", (role, user_id))
+        audit(g.db, g.user["id"], "user_role_changed", "user", user_id,
+              before={"name": user["name"], "role": user["role"]}, after={"name": user["name"], "role": role})
+        g.db.commit()
+        flash(f"{user['name']} is now {role.replace('_', ' ')} (Entra group {entra_group(role)}).")
+    return redirect(url_for("admin_access"))
+
+
+@app.post("/admin/permissions")
+def admin_set_permissions():
+    require("users_manage")
+    before = {(r, p) for r, p in g.db.execute("SELECT role, perm FROM role_permissions")}
+    after = {(r, p) for r, _, _ in ROLES for p in PERMISSIONS if request.form.get(f"{r}:{p}")} | LOCKED
+    added, removed = sorted(after - before), sorted(before - after)
+    if added or removed:
+        g.db.execute("DELETE FROM role_permissions")
+        g.db.executemany("INSERT INTO role_permissions VALUES (?, ?)", sorted(after))
+        for role in {r for r, _ in added + removed}:
+            audit(g.db, g.user["id"], "role_permissions_changed", "role", 0,
+                  before={"role": role, "removed": [p for r, p in removed if r == role]},
+                  after={"role": role, "added": [p for r, p in added if r == role]})
+        g.db.commit()
+        flash(f"Saved: {len(added)} permission(s) added, {len(removed)} removed.")
+    return redirect(url_for("admin_access"))
 
 
 @app.errorhandler(403)

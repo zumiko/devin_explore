@@ -13,6 +13,7 @@ from faker import Faker
 import face_match
 import kyc_docs
 import ocr
+import access
 from db import DB_PATH, audit, connect
 
 SEED = 42
@@ -97,6 +98,8 @@ def migrate():
         if col not in [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
     conn.executemany("INSERT OR IGNORE INTO settings VALUES (?, ?, ?)", SETTINGS)
+    if not conn.execute("SELECT 1 FROM role_permissions LIMIT 1").fetchone():
+        conn.executemany("INSERT INTO role_permissions VALUES (?, ?)", access.default_rows())
     conn.commit()
     conn.close()
 
@@ -190,6 +193,7 @@ def build(db_path=DB_PATH):
         email = name.lower().replace(" ", ".") + "@acmepay.example"
         conn.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?)", (uid, name, email, role, team))
     conn.executemany("INSERT INTO settings VALUES (?, ?, ?)", SETTINGS)
+    conn.executemany("INSERT INTO role_permissions VALUES (?, ?)", access.default_rows())
     for i, w in enumerate(WATCHLIST, 1):
         conn.execute("INSERT INTO watchlist VALUES (?, ?, ?, ?, ?, ?)", (i, *w))
 

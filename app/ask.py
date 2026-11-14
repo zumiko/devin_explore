@@ -20,7 +20,7 @@ MASKED = {
     "face_checks": {"id_image", "selfie_image", "id_face", "selfie_face"},
     "users": {"email"},
 }
-# table -> permission needed (see PERMS in app.py)
+# table -> permission needed (see access.py)
 TABLES = {
     "users": "ask_data",
     "feature_flags": "flag_view",
@@ -33,7 +33,7 @@ TABLES = {
     "transactions": "refund_view",
     "refunds": "refund_view",
     "approvals": "approvals_view",
-    "audit_log": "audit_view",
+    "audit_log": "audit_view_all",
 }
 NOTES = """Notes:
 - Timestamps are ISO-8601 text in local time, e.g. '2026-11-14T09:30:00'. Today is {today}.

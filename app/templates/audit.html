@@ -1,11 +1,11 @@
 {% extends 'base.html' %}
 {% block content %}
 <h1>Audit log</h1>
-<p class="tabs">
-  {% for t, name in [('', 'Everything'), ('kyc_case', 'KYC'), ('refund', 'Refunds'), ('feature_flag', 'Flags'), ('setting', 'Rules')] %}
+{% if not can('audit_view_all') %}<p class="muted">Showing feature flag changes, the part of the log your role covers.</p>{% else %}<p class="tabs">
+  {% for t, name in [('', 'Everything'), ('kyc_case', 'KYC'), ('refund', 'Refunds'), ('feature_flag', 'Flags'), ('setting', 'Rules'), ('user', 'People'), ('role', 'Permissions')] %}
   <a href="?type={{ t }}" class="{% if t == entity_type %}active{% endif %}">{{ name }}</a>
   {% endfor %}
-</p>
+</p>{% endif %}
 <table class="small">
   <tr><th>When</th><th>Who</th><th>Action</th><th>Record</th><th>Change</th><th>Reason</th></tr>
   {% for h in rows %}

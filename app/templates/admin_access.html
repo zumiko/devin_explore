@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>Users &amp; access</h1>
+<p class="muted">Each person's role decides what they can see and do. {% if sso %}Roles come from the person's Entra group every time they sign in, so change group membership in Entra.{% else %}Demo mode: the Entra groups below are placeholders showing which group would grant each role once Microsoft sign-in is on.{% endif %} Every change here goes to the audit log.</p>
+
+<h2>People</h2>
+<table>
+  <tr><th>Name</th><th>Team</th><th>Role</th><th>Entra group</th><th>Apps they see</th></tr>
+  {% for u in users %}
+  <tr>
+    <td>{{ u.name }}<br><small class="muted">{{ u.email }}</small></td>
+    <td>{{ u.team }}</td>
+    <td>
+      <form method="post" action="{{ url_for('admin_set_role', user_id=u.id) }}">
+        <select name="role" onchange="this.form.submit()" {% if sso or u.id == me.id %}disabled title="{{ 'Set in Entra' if sso else 'You cannot change your own role' }}"{% endif %}>
+          {% for key, name, _ in roles %}<option value="{{ key }}" {% if key == u.role %}selected{% endif %}>{{ name }}</option>{% endfor %}
+        </select>
+      </form>
+    </td>
+    <td class="mono small">{{ group(u.role) }}</td>
+    <td class="small">{{ apps_for[u.role]|join(', ') or 'Home page only' }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<h2>Roles</h2>
+<table>
+  <tr><th>Role</th><th>Job</th><th>Entra group</th><th>Apps</th></tr>
+  {% for key, name, job in roles %}
+  <tr><td>{{ name }}</td><td>{{ job }}</td><td class="mono small">{{ group(key) }}</td><td class="small">{{ apps_for[key]|join(', ') or 'Home page only' }}</td></tr>
+  {% endfor %}
+</table>
+
+<h2>What each role can do</h2>
+<p class="muted">Tick to grant. Changes apply on the person's next click. Pages check these on the server, so removing a tick blocks access, not just the menu link.</p>
+<form method="post" action="{{ url_for('admin_set_permissions') }}">
+<table class="small matrix">
+  <tr><th>Area</th><th>Permission</th>{% for key, name, _ in roles %}<th>{{ name }}</th>{% endfor %}</tr>
+  {% for perm, (area, desc, _) in perms.items() %}
+  <tr>
+    <td class="muted">{{ area }}</td><td>{{ desc }}</td>
+    {% for key, _, _ in roles %}
+    <td class="center"><input type="checkbox" name="{{ key }}:{{ perm }}" {% if perm in granted.get(key, []) %}checked{% endif %}
+      {% if (key, perm) in locked %}disabled title="Kept so admins can't lock themselves out"{% endif %}></td>
+    {% endfor %}
+  </tr>
+  {% endfor %}
+</table>
+<button>Save permissions</button>
+</form>
+{% endblock %}

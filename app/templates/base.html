@@ -18,8 +18,9 @@
     {% if can('customer_view') %}<a href="{{ url_for('customers') }}">Customers</a>{% endif %}
     {% if can('audit_view') %}<a href="{{ url_for('audit_log') }}">Audit Log</a>{% endif %}
     {% if can('settings_view') %}<a href="{{ url_for('settings') }}">Rules</a>{% endif %}
-    <a href="{{ url_for('ask_data') }}">Ask the data</a>
-    {% if can('kyc_view') %}<a href="{{ url_for('signup') }}" target="_blank">Customer signup &#8599;</a>{% endif %}
+    {% if can('users_manage') %}<a href="{{ url_for('admin_access') }}">Users &amp; Access</a>{% endif %}
+    {% if can('ask_data') %}<a href="{{ url_for('ask_data') }}">Ask the data</a>{% endif %}
+    {% if can('kyc_work') %}<a href="{{ url_for('signup') }}" target="_blank">Customer signup &#8599;</a>{% endif %}
   </nav>{% else %}<nav></nav>{% endif %}
   {% if sso %}
   <form class="whoami" method="post" action="{{ url_for('logout') }}">

@@ -1,3 +1,9 @@
+CREATE TABLE IF NOT EXISTS role_permissions (
+  role TEXT NOT NULL,
+  perm TEXT NOT NULL,
+  PRIMARY KEY (role, perm)
+);
+
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,

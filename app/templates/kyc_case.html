@@ -63,7 +63,9 @@
       {% if case.status == 'pending_second_review' %}
         <p class="flash">First approval by {{ case.first_decider }}: “{{ case.decision_note }}”. A different senior reviewer must confirm.</p>
       {% endif %}
-      {% if case.assigned_to != me.id and case.status != 'pending_second_review' %}
+      {% if not can('kyc_work') %}
+        <p class="muted">View only: your role can't work KYC cases.</p>
+      {% elif case.assigned_to != me.id and case.status != 'pending_second_review' %}
         <form method="post" action="{{ url_for('kyc_claim', case_id=case.id) }}"><button>Claim this case</button></form>
       {% else %}
       <form method="post" action="{{ url_for('kyc_decide', case_id=case.id) }}" class="stack">
@@ -122,7 +124,7 @@
     {% endfor %}
   </table>
   {% else %}<p class="muted">No messages yet.</p>{% endif %}
-  {% if case.status not in ('approved', 'rejected') %}
+  {% if case.status not in ('approved', 'rejected') and can('kyc_work') %}
   <h4>Invite to a video call</h4>
   <form method="post" action="{{ url_for('kyc_invite_call', case_id=case.id) }}" class="row">
     <label>Date<input type="date" name="date" required></label>
@@ -182,6 +184,7 @@
   </details>
   {% endif %}
   {% endif %}
+  {% if can('kyc_work') %}
   <h4>{% if latest %}Customer sent new photos?{% else %}No documents on file{% endif %}</h4>
   <p class="muted small">{% if latest %}For example after you asked for a clearer ID or a selfie retake. Upload them to run the match again; the signup result stays in the record.{% else %}Upload an ID photo and a selfie to run a face match.{% endif %}</p>
   <form method="post" enctype="multipart/form-data" action="{{ url_for('kyc_face_match', case_id=case.id) }}" class="inline upload">
@@ -189,6 +192,7 @@
     <label>Selfie <input type="file" name="selfie" accept="image/*" required></label>
     <button>Compare faces</button>
   </form>
+  {% endif %}
 </section>
 {% include '_history.html' %}
 {% endblock %}

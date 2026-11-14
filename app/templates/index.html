@@ -29,6 +29,32 @@
   {% if can('flag_view') %}<div class="card"><div class="big">{{ stats.flags_on }}</div>feature flags on</div>{% endif %}
 </div>
 {% endif %}
+{% if team %}
+<h2>Waiting on my second sign-off</h2>
+{% if team.signoff %}<table>
+  <tr><th>Case</th><th>Customer</th><th>First approval</th><th>Risk</th><th>Due</th></tr>
+  {% for c in team.signoff %}<tr><td><a href="{{ url_for('kyc_case', case_id=c.id) }}">#{{ c.id }}</a></td><td>{{ c.name }}</td><td>{{ c.first_decider }}</td><td>{{ c.risk_score }}</td><td>{{ c.sla_due_at|dt }}</td></tr>{% endfor %}
+</table>{% else %}<p class="muted">Nothing waiting.</p>{% endif %}
+{% if team.escalated %}
+<h2>Escalated, needs a senior</h2>
+<table>
+  <tr><th>Case</th><th>Customer</th><th>Risk</th><th>Due</th></tr>
+  {% for c in team.escalated %}<tr><td><a href="{{ url_for('kyc_case', case_id=c.id) }}">#{{ c.id }}</a></td><td>{{ c.name }}</td><td>{{ c.risk_score }}</td><td>{{ c.sla_due_at|dt }}</td></tr>{% endfor %}
+</table>
+{% endif %}
+<h2>Who's holding what</h2>
+<table>
+  <tr><th>Reviewer</th><th>Open cases</th><th>Past deadline</th></tr>
+  {% for h in team.holding %}<tr><td>{{ h.name }}</td><td>{{ h.open }}</td><td class="{{ 'bad' if h.overdue else '' }}">{{ h.overdue }}</td></tr>{% endfor %}
+</table>
+{% if team.overdue %}
+<h2>Past deadline across the team</h2>
+<table>
+  <tr><th>Case</th><th>Customer</th><th>Status</th><th>With</th><th>Due</th></tr>
+  {% for c in team.overdue %}<tr><td><a href="{{ url_for('kyc_case', case_id=c.id) }}">#{{ c.id }}</a></td><td>{{ c.name }}</td><td>{{ c.status|label }}</td><td>{{ c.assignee or 'unassigned' }}</td><td class="bad">{{ c.sla_due_at|dt }}</td></tr>{% endfor %}
+</table>
+{% endif %}
+{% endif %}
 {% if my_cases %}
 <h2>My KYC cases</h2>
 <table>
@@ -72,7 +98,7 @@
   {% for a in apps %}<a class="app" href="{{ url_for(a.endpoint) }}"><b>{{ a.name }}</b><span>{{ a.desc }}</span></a>{% endfor %}
 </div>
 {% endif %}
-{% if not sso or can('settings_edit') %}
+{% if not sso or can('users_manage') %}
 <form method="post" action="{{ url_for('reset') }}" onsubmit="return confirm('Reset all demo data?')" style="margin-top:24px">
   <button class="secondary">Reset demo data</button>
 </form>

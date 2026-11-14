@@ -1,11 +1,11 @@
 {% extends 'base.html' %}
 {% block content %}
 <h1>Business rules</h1>
-<p class="muted">These rules are stored as data, so changing them doesn't need a code change. Only admins can edit them.</p>
+<p class="muted">These rules are stored as data, so changing them doesn't need a code change. Each rule is edited by the team that owns it: compliance owns the KYC rules, finance owns the refund limits.</p>
 <form method="post" class="stack narrow">
   {% for r in rows %}
-  <label>{{ r.description }}<input name="{{ r.key }}" value="{{ r.value }}" {% if not can('settings_edit') %}disabled{% endif %}><small class="mono">{{ r.key }}</small></label>
+  <label>{{ r.description }}<input name="{{ r.key }}" value="{{ r.value }}" {% if r.key not in editable %}disabled{% endif %}><small class="mono">{{ r.key }}</small></label>
   {% endfor %}
-  {% if can('settings_edit') %}<button>Save</button>{% endif %}
+  {% if editable %}<button>Save</button>{% endif %}
 </form>
 {% endblock %}
