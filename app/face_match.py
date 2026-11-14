@@ -6,6 +6,7 @@ vendor (Persona, Onfido, ...) would run; it has no liveness or document
 authenticity checks.
 """
 import os
+import threading
 import urllib.request
 
 import cv2
@@ -20,6 +21,7 @@ MAX_SIDE = 1280
 
 _detector = None
 _recognizer = None
+_lock = threading.Lock()
 
 
 class FaceMatchError(Exception):
@@ -66,6 +68,12 @@ def _largest_face(img, label):
 
 def compare(id_bytes, selfie_bytes):
     """Return similarity (cosine, roughly -1..1; same person usually > 0.36) plus aligned face crops."""
+    # The OpenCV detector and recognizer are shared and stateful (setInputSize), so one match at a time.
+    with _lock:
+        return _compare(id_bytes, selfie_bytes)
+
+
+def _compare(id_bytes, selfie_bytes):
     id_face, id_feat, id_count, id_conf = _largest_face(_decode(id_bytes, "ID photo"), "ID photo")
     selfie_face, selfie_feat, selfie_count, selfie_conf = _largest_face(_decode(selfie_bytes, "selfie"), "selfie")
     _, recognizer = _models()

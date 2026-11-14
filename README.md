@@ -38,6 +38,35 @@ A single Flask app with plain server-rendered pages, running on one SQLite datab
 - Refunds: a $750 refund waiting for finance, a $1,200 refund waiting for a lead, a repeat refunder, and an agent (Tom) with outsized volume.
 - `new_fee_engine` was switched on 3 weeks ago, and "fee error" refunds spiked right after (Refund Dashboard).
 
+## How to review
+
+All data is fake. There's no real sign-in in the demo: use the **Acting as** menu (top right) to become anyone. Switching always lands on that person's home page. "Reset demo data" on the home page puts everything back.
+
+| Act as | Try this |
+|---|---|
+| **Priya Shah** (KYC analyst) | Her single "Hi Priya" page. Open case #2 (Alex Mercer): the selfie is a different person, so the face match fails. Claim it and reject it with a reason. |
+| **Marcus Lee** (KYC senior) | Team view on his home page. Open case #3 (Grace Holloway) after Priya approves it: high risk, so it needs his second sign-off. |
+| **Dana Brooks** (compliance lead) | KYC dashboard: 12 weeks of trends and reviewer performance. Change requests: log a request for a change to the tools. |
+| **Customer signup** (link in Priya's or Marcus's top bar, or `/signup`) | Upload a fake ID and selfie from `app/sample_faces/`. A clean match is approved automatically; anything unclear becomes a KYC case. |
+| **Tom Reyes** (support agent) | Search "Jack Mora" and refund one of his charges: it's under $50 but goes to a lead because he's a repeat refunder. Refund $30 and then $25 on one charge to trip the split check. |
+| **Sofia Alvarez** (support lead) | Approvals: each card shows why it was escalated, plus the customer's and agent's history. Overdue steps are flagged. |
+| **Ken Watanabe** (finance) | Final approval on refunds over $500, refund limits on the Rules page, and CSV export on Refunds. |
+| **Lena Fischer** (PM) | Feature flags (critical ones are locked to engineering) and the refund dashboard: `new_fee_engine` lines up with a spike in "fee error" refunds. |
+| **Omar Haddad** (engineer) | Critical flags, the flag-only audit log, and "Merged and live" on an approved change request. |
+| **Admin User** (IT) | Users & Access: what each Entra group can do, and per-person restrictions (e.g. untick "Issue refunds" for Tom). Admin can view KYC cases and refunds but can't decide or approve them. |
+
+**What's simulated in the hosted demo:** emails and texts go to an on-screen outbox; "Ask the data" needs an AI key, though typed SQL still runs through the access checks; approving a change request shows the prompt Devin would get instead of starting a session; Microsoft sign-in is built but off.
+
+## Hosting the reviewer demo (Render)
+
+`Dockerfile` and `render.yaml` deploy the app in demo mode, with Tesseract and the face models baked in. Demo data is rebuilt on every deploy or restart.
+
+1. On [render.com](https://render.com), sign in with GitHub and choose **New → Blueprint**, then pick this repo. Render reads `render.yaml`.
+2. When asked, set `DEMO_ACCESS_CODE` to the code you'll give reviewers. `SECRET_KEY` is generated for you.
+3. Share the `onrender.com` URL and the code. Change the code in Render's environment settings to cut off access.
+
+The site sends `noindex` headers and a `robots.txt` that blocks crawlers. Don't add `DEVIN_API_KEY` or AI keys there unless you want reviewers spending on them. The free plan sleeps when idle, so the first visit takes about 30 seconds.
+
 ## Run it
 
 ```bash

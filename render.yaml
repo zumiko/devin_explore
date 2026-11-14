@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: acmepay-internal-tools
+    runtime: docker
+    plan: free
+    branch: main
+    autoDeploy: true
+    healthCheckPath: /healthz
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEMO_ACCESS_CODE
+        sync: false
