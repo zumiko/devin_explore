@@ -1,8 +1,9 @@
 {% extends 'base.html' %}
 {% block content %}
-<h1>KYC review queue</h1>
+<h1>{{ 'KYC review queue' if can('kyc_view_all') else 'My KYC queue' }}</h1>
+{% if not can('kyc_view_all') %}<p class="muted">Your cases and unassigned ones you can pick up. Seniors and compliance see the whole queue.</p>{% endif %}
 <p class="tabs">
-  {% for v in ['open', 'mine', 'closed', 'all'] %}
+  {% for v in views %}
   <a href="?view={{ v }}" class="{% if v == view %}active{% endif %}">{{ v|capitalize }}</a>
   {% endfor %}
 </p>

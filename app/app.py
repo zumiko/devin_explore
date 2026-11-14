@@ -45,6 +45,7 @@ PERMS = {
     "refund_request": {"support_agent", "support_lead", "admin"},
     "ask_data": ALL_ROLES,
     "kyc_dashboard": {"compliance_lead", "admin"},
+    "kyc_view_all": {"kyc_senior", "compliance_lead", "admin"},
     "refund_dashboard": {"support_lead", "finance", "pm", "admin"},
     "approvals_view": {"support_lead", "finance", "admin"},
     "flag_view": {"pm", "engineer", "admin"},
@@ -268,22 +269,34 @@ def index():
 @app.get("/kyc")
 def kyc_list():
     require("kyc_view")
-    view = request.args.get("view", "open")
-    where, params = "", []
-    if view == "open":
-        where = f"WHERE k.status IN {OPEN_KYC}"
-    elif view == "mine":
-        where = f"WHERE k.status IN {OPEN_KYC} AND k.assigned_to = ?"
-        params = [g.user["id"]]
-    elif view == "closed":
-        where = "WHERE k.status IN ('approved', 'rejected')"
+    me = g.user["id"]
+    if can("kyc_view_all"):
+        views = ["open", "mine", "closed", "all"]
+        filters = {
+            "open": (f"k.status IN {OPEN_KYC}", []),
+            "mine": (f"k.status IN {OPEN_KYC} AND k.assigned_to = ?", [me]),
+            "closed": ("k.status IN ('approved', 'rejected')", []),
+            "all": ("1", []),
+        }
+    else:
+        views = ["mine", "unassigned", "closed"]
+        filters = {
+            "mine": (f"k.status IN {OPEN_KYC} AND k.assigned_to = ?", [me]),
+            "unassigned": (f"k.status IN {OPEN_KYC} AND k.assigned_to IS NULL", []),
+            "closed": ("k.status IN ('approved', 'rejected') AND ? IN (k.assigned_to, k.first_decision_by, k.decided_by)", [me]),
+        }
+    view = request.args.get("view", views[0])
+    if view not in views:
+        view = views[0]
+    cond, params = filters[view]
+    where = f"WHERE {cond}"
     cases = g.db.execute(
         "SELECT k.*, c.name, c.account_type, u.name AS assignee FROM kyc_cases k"
         " JOIN customers c ON c.id = k.customer_id LEFT JOIN users u ON u.id = k.assigned_to "
         f"{where} ORDER BY CASE WHEN k.status IN {OPEN_KYC} THEN 0 ELSE 1 END, k.risk_score DESC, k.sla_due_at",
         params,
     ).fetchall()
-    return render_template("kyc_list.html", cases=cases, view=view, now=now_iso())
+    return render_template("kyc_list.html", cases=cases, view=view, views=views, now=now_iso())
 
 
 def load_case(case_id):
@@ -302,6 +315,9 @@ def load_case(case_id):
 def kyc_case(case_id):
     require("kyc_view")
     case = load_case(case_id)
+    if not can("kyc_view_all") and case["assigned_to"] not in (None, g.user["id"]) \
+            and g.user["id"] not in (case["first_decision_by"], case["decided_by"]):
+        abort(403, "This case is assigned to someone else.")
     customer = g.db.execute("SELECT * FROM customers WHERE id = ?", (case["customer_id"],)).fetchone()
     flags = json.loads(case["flags_json"])
     for f in flags:
