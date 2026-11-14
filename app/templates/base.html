@@ -14,12 +14,12 @@
     {% if can('approvals_view') %}<a href="{{ url_for('approvals') }}">Approvals{% if pending_count %} <span class="pill">{{ pending_count }}</span>{% endif %}</a>{% endif %}
     {% if can('kyc_dashboard') %}<a href="{{ url_for('kyc_dashboard') }}">KYC Dashboard</a>{% endif %}
     {% if can('refund_dashboard') %}<a href="{{ url_for('refund_dashboard') }}">Refund Dashboard</a>{% endif %}
-    <a href="{{ url_for('flags') }}">Feature Flags</a>
+    {% if can('flag_view') %}<a href="{{ url_for('flags') }}">Feature Flags</a>{% endif %}
     {% if can('customer_view') %}<a href="{{ url_for('customers') }}">Customers</a>{% endif %}
     {% if can('audit_view') %}<a href="{{ url_for('audit_log') }}">Audit Log</a>{% endif %}
-    <a href="{{ url_for('settings') }}">Rules</a>
+    {% if can('settings_view') %}<a href="{{ url_for('settings') }}">Rules</a>{% endif %}
     <a href="{{ url_for('ask_data') }}">Ask the data</a>
-    <a href="{{ url_for('signup') }}" target="_blank">Customer signup &#8599;</a>
+    {% if can('kyc_view') %}<a href="{{ url_for('signup') }}" target="_blank">Customer signup &#8599;</a>{% endif %}
   </nav>
   {% if sso %}
   <form class="whoami" method="post" action="{{ url_for('logout') }}">

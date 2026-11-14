@@ -65,3 +65,7 @@ form.upload label { display: flex; flex-direction: column; gap: 4px; }
 .msgbody { white-space: pre-wrap; font: inherit; background: #f6f8fb; padding: 8px; border-radius: 4px; max-width: 520px; }
 form.row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
 .panel { background: #fff; border: 1px solid #e3e7ee; border-radius: 6px; padding: 12px; margin: 10px 0; }
+.apps { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.app { display: flex; flex-direction: column; gap: 4px; background: #fff; border: 1px solid #e3e7ee; border-radius: 6px; padding: 12px; text-decoration: none; color: inherit; }
+.app:hover { border-color: #5b8def; }
+.app span { color: #6b7280; font-size: 13px; }

@@ -22,9 +22,9 @@ MASKED = {
 }
 # table -> permission needed (see PERMS in app.py)
 TABLES = {
-    "users": "flag_view",
+    "users": "ask_data",
     "feature_flags": "flag_view",
-    "settings": "flag_view",
+    "settings": "settings_view",
     "customers": "customer_view",
     "kyc_cases": "kyc_view",
     "watchlist": "kyc_view",

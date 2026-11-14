@@ -1,12 +1,14 @@
 {% extends 'base.html' %}
 {% block content %}
 <h1>Hi {{ me.name.split()[0] }}</h1>
-<p class="muted">You're acting as <b>{{ me.role|label }}</b>. Switch people in the top right to see what each role can do.</p>
+<p class="muted">{{ me.role|label|capitalize }} · {{ me.team }}. You only see the apps your role uses.{% if not sso %} Switch people in the top right to compare roles.{% endif %}</p>
 <div class="cards">
-  <div class="card"><div class="big">{{ stats.kyc_open }}</div>open KYC cases<br><span class="bad">{{ stats.kyc_overdue }} past deadline</span></div>
-  <div class="card"><div class="big">{{ stats.refunds_pending }}</div>refunds waiting for approval</div>
-  <div class="card"><div class="big">{{ stats.refunds_30d|money }}</div>refunded in last 30 days</div>
-  <div class="card"><div class="big">{{ stats.flags_on }}</div>feature flags on</div>
+  {% if can('kyc_view') %}<div class="card"><div class="big">{{ stats.kyc_open }}</div>open KYC cases<br><span class="bad">{{ stats.kyc_overdue }} past deadline</span></div>{% endif %}
+  {% if can('kyc_view') %}<div class="card"><div class="big">{{ my_cases|length }}</div>assigned to me</div>{% endif %}
+  {% if can('approvals_view') %}<div class="card"><div class="big">{{ approvals|length }}</div>refunds waiting on me</div>{% endif %}
+  {% if can('refund_view') %}<div class="card"><div class="big">{{ stats.refunds_pending }}</div>refunds waiting for approval</div>{% endif %}
+  {% if can('refund_dashboard') %}<div class="card"><div class="big">{{ stats.refunds_30d|money }}</div>refunded in last 30 days</div>{% endif %}
+  {% if can('flag_view') %}<div class="card"><div class="big">{{ stats.flags_on }}</div>feature flags on</div>{% endif %}
 </div>
 {% if my_cases %}
 <h2>My KYC cases</h2>
@@ -21,7 +23,27 @@
 <h2>Waiting on my approval</h2>
 <p><a href="{{ url_for('approvals') }}">{{ approvals|length }} refund(s) need your sign-off &rarr;</a></p>
 {% endif %}
-<form method="post" action="{{ url_for('reset') }}" onsubmit="return confirm('Reset all demo data?')">
+{% if my_refunds %}
+<h2>My recent refunds</h2>
+<table>
+  <tr><th>Customer</th><th>Amount</th><th>Reason</th><th>Status</th><th>When</th></tr>
+  {% for r in my_refunds %}<tr><td>{{ r.name }}</td><td>{{ r.amount_cents|money }}</td><td>{{ r.reason|label }}</td><td>{{ r.status|label }}</td><td>{{ r.created_at|dt }}</td></tr>{% endfor %}
+</table>
+{% endif %}
+{% if my_flags %}
+<h2>Flags I own</h2>
+<table>
+  <tr><th>Flag</th><th>State</th><th>Rollout</th></tr>
+  {% for f in my_flags %}<tr><td>{{ f.key }}</td><td>{{ 'on' if f.enabled else 'off' }}</td><td>{{ f.rollout_pct }}%</td></tr>{% endfor %}
+</table>
+{% endif %}
+<h2>Your apps</h2>
+<div class="apps">
+  {% for a in apps %}<a class="app" href="{{ url_for(a.endpoint) }}"><b>{{ a.name }}</b><span>{{ a.desc }}</span></a>{% endfor %}
+</div>
+{% if not sso or can('settings_edit') %}
+<form method="post" action="{{ url_for('reset') }}" onsubmit="return confirm('Reset all demo data?')" style="margin-top:24px">
   <button class="secondary">Reset demo data</button>
 </form>
+{% endif %}
 {% endblock %}

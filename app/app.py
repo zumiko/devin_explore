@@ -37,13 +37,14 @@ PERMS = {
     "kyc_second_review": {"kyc_senior", "compliance_lead", "admin"},
     "customer_view": KYC_ROLES | {"support_agent", "support_lead", "finance"},
     "customer_pii": KYC_ROLES,
-    "refund_view": {"support_agent", "support_lead", "finance", "compliance_lead", "admin"},
+    "refund_view": {"support_agent", "support_lead", "finance", "admin"},
     "refund_request": {"support_agent", "support_lead", "admin"},
     "ask_data": ALL_ROLES,
     "kyc_dashboard": {"compliance_lead", "admin"},
-    "refund_dashboard": {"support_lead", "finance", "pm", "engineer", "compliance_lead", "admin"},
+    "refund_dashboard": {"support_lead", "finance", "pm", "admin"},
     "approvals_view": {"support_lead", "finance", "admin"},
-    "flag_view": ALL_ROLES,
+    "flag_view": {"pm", "engineer", "admin"},
+    "settings_view": {"compliance_lead", "finance", "admin"},
     "flag_edit": {"pm", "engineer", "admin"},
     "flag_edit_critical": {"engineer", "admin"},
     "audit_view": {"compliance_lead", "support_lead", "finance", "engineer", "admin"},
@@ -56,6 +57,18 @@ KYC_REASONS = {
     "escalate": ["complex_match", "possible_pep", "needs_senior_judgment"],
 }
 REFUND_REASONS = seed.REFUND_REASONS
+APPS = [
+    {"perm": "kyc_view", "endpoint": "kyc_list", "name": "KYC review queue", "desc": "Identity checks the automatic rules couldn't clear."},
+    {"perm": "kyc_dashboard", "endpoint": "kyc_dashboard", "name": "KYC dashboard", "desc": "Signup trends and reviewer performance."},
+    {"perm": "refund_view", "endpoint": "refunds", "name": "Refunds", "desc": "Look up charges and issue refunds."},
+    {"perm": "approvals_view", "endpoint": "approvals", "name": "Refund approvals", "desc": "Refunds above the limit waiting on sign-off."},
+    {"perm": "refund_dashboard", "endpoint": "refund_dashboard", "name": "Refund dashboard", "desc": "Refund volume by reason, agent and customer."},
+    {"perm": "flag_view", "endpoint": "flags", "name": "Feature flags", "desc": "Turn features on, roll out gradually, target customers."},
+    {"perm": "customer_view", "endpoint": "customers", "name": "Customers", "desc": "Customer profiles and history."},
+    {"perm": "audit_view", "endpoint": "audit_log", "name": "Audit log", "desc": "Who changed what, when, and why."},
+    {"perm": "settings_view", "endpoint": "settings", "name": "Rules", "desc": "Thresholds and limits the apps enforce."},
+    {"perm": "ask_data", "endpoint": "ask_data", "name": "Ask the data", "desc": "Questions in plain English, within your access."},
+]
 OPEN_KYC = ("new", "in_review", "needs_info", "escalated", "pending_second_review")
 
 
@@ -237,7 +250,13 @@ def index():
         (g.user["id"],),
     ).fetchall()
     approvals = pending_approvals_for(g.user) if can("approvals_view") else []
-    return render_template("index.html", stats=stats, my_cases=my_cases, approvals=approvals)
+    my_refunds = db.execute(
+        "SELECT r.*, c.name FROM refunds r JOIN customers c ON c.id = r.customer_id WHERE r.requested_by = ?"
+        " ORDER BY r.created_at DESC LIMIT 8", (g.user["id"],)).fetchall() if can("refund_request") else []
+    my_flags = db.execute("SELECT * FROM feature_flags WHERE owner_id = ? ORDER BY key",
+                          (g.user["id"],)).fetchall() if can("flag_view") else []
+    return render_template("index.html", stats=stats, my_cases=my_cases, approvals=approvals, my_refunds=my_refunds,
+                           my_flags=my_flags, apps=[a for a in APPS if can(a["perm"])])
 
 
 # ---------- KYC ----------
@@ -976,6 +995,7 @@ def audit_log():
 
 @app.route("/settings", methods=["GET", "POST"])
 def settings():
+    require("settings_view")
     rows = g.db.execute("SELECT * FROM settings").fetchall()
     if request.method == "POST":
         require("settings_edit")

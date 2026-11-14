@@ -11,8 +11,8 @@
   {% for h in rows %}
   <tr>
     <td>{{ h.ts|dt }}</td><td>{{ h.actor or 'System' }}</td><td>{{ h.action|label }}</td>
-    <td>{% if h.entity_type == 'kyc_case' %}<a href="{{ url_for('kyc_case', case_id=h.entity_id) }}">KYC #{{ h.entity_id }}</a>
-        {% elif h.entity_type == 'refund' %}<a href="{{ url_for('refund_detail', refund_id=h.entity_id) }}">Refund #{{ h.entity_id }}</a>
+    <td>{% if h.entity_type == 'kyc_case' and can('kyc_view') %}<a href="{{ url_for('kyc_case', case_id=h.entity_id) }}">KYC #{{ h.entity_id }}</a>
+        {% elif h.entity_type == 'refund' and can('refund_view') %}<a href="{{ url_for('refund_detail', refund_id=h.entity_id) }}">Refund #{{ h.entity_id }}</a>
         {% else %}{{ h.entity_type|label }} #{{ h.entity_id }}{% endif %}</td>
     <td class="mono">{% if h.before_json %}{{ h.before_json }} &rarr; {% endif %}{{ h.after_json or '' }}</td>
     <td>{{ h.reason or '' }}</td>
