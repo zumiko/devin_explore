@@ -5,3 +5,4 @@ numpy
 pillow>=10
 pytesseract>=0.3
 msal>=1.28,<2
+gunicorn>=23,<28

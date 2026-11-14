@@ -1,8 +1,10 @@
 import difflib
+import hashlib
 import json
 import os
 import random
 import secrets
+import time
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -31,7 +33,8 @@ if not entra.enabled():
     app.config.update(SESSION_COOKIE_SAMESITE="None", SESSION_COOKIE_SECURE=True, SESSION_COOKIE_PARTITIONED=True)
 if entra.enabled() and app.secret_key == "demo-only-not-secret":
     raise SystemExit("Set SECRET_KEY when Microsoft sign-in is on.")
-PUBLIC_ENDPOINTS = {"static", "signup", "resubmit", "login", "auth_callback", "logged_out"}
+PUBLIC_ENDPOINTS = {"static", "signup", "resubmit", "login", "auth_callback", "logged_out", "access_gate", "robots", "healthz"}
+ACCESS_CODE = os.environ.get("DEMO_ACCESS_CODE", "")
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 
 from access import PERMISSIONS, ROLES, LOCKED, setting_perm  # noqa: E402
@@ -80,6 +83,50 @@ def role_perms(role):
 def require(perm):
     if not can(perm):
         abort(403)
+
+
+def _access_token():
+    return hashlib.sha256(f"{app.secret_key}:{ACCESS_CODE}".encode()).hexdigest()[:32]
+
+
+@app.before_request
+def access_gate_check():
+    if not ACCESS_CODE or request.endpoint in {"static", "access_gate", "robots", "healthz"}:
+        return None
+    if not secrets.compare_digest(session.get("access", ""), _access_token()):
+        return redirect(url_for("access_gate", next=request.full_path if request.method in ("GET", "HEAD") else "/"))
+
+
+@app.route("/access", methods=["GET", "POST"])
+def access_gate():
+    nxt = request.values.get("next", "/")
+    if not nxt.startswith("/") or nxt.startswith("//"):
+        nxt = "/"
+    error = None
+    if request.method == "POST":
+        if ACCESS_CODE and secrets.compare_digest(request.form.get("code", "").strip(), ACCESS_CODE):
+            session.permanent = True
+            session["access"] = _access_token()
+            return redirect(nxt)
+        time.sleep(1)
+        error = "That code didn't work."
+    return render_template("access.html", next=nxt, error=error)
+
+
+@app.get("/robots.txt")
+def robots():
+    return Response("User-agent: *\nDisallow: /\n", mimetype="text/plain")
+
+
+@app.get("/healthz")
+def healthz():
+    return "ok"
+
+
+@app.after_request
+def no_index(resp):
+    resp.headers["X-Robots-Tag"] = "noindex, nofollow"
+    return resp
 
 
 @app.before_request

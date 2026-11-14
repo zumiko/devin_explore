@@ -1,0 +1,7 @@
+.git
+**/__pycache__
+**/*.pyc
+**/*.db
+app/models/
+app/entra_test_users.local.json
+.venv
