@@ -6,7 +6,8 @@ import json
 import os
 import urllib.request
 
-API = "https://api.devin.ai/v1"
+API = "https://api.devin.ai"
+ORG_ID = os.environ.get("DEVIN_ORG_ID", "")
 REPO = os.environ.get("CHANGE_REPO", "zumiko/devin_explore")
 BASE_BRANCH = os.environ.get("CHANGE_BASE_BRANCH", "devin/face-match-upload")
 
@@ -28,6 +29,10 @@ def prompt_for(req, requester, approver_note):
     )
 
 
+def _v3():
+    return os.environ.get("DEVIN_API_KEY", "").startswith("cog_")
+
+
 def _call(method, path, body=None):
     req = urllib.request.Request(
         API + path, method=method, data=json.dumps(body).encode() if body is not None else None,
@@ -37,13 +42,18 @@ def _call(method, path, body=None):
 
 
 def start(prompt, title):
-    r = _call("POST", "/sessions", {"prompt": prompt, "title": title, "idempotent": True,
-                                    "tags": ["acmepay-change-request"]})
+    body = {"prompt": prompt, "title": title, "tags": ["acmepay-change-request"]}
+    if _v3():
+        if not ORG_ID:
+            raise RuntimeError("DEVIN_ORG_ID must be set to use a service user key")
+        r = _call("POST", f"/v3/organizations/{ORG_ID}/sessions", body)
+    else:
+        r = _call("POST", "/v1/sessions", dict(body, idempotent=True))
     return {"session_id": r["session_id"], "url": r["url"]}
 
 
 def status(session_id):
-    r = _call("GET", f"/session/{session_id}")
+    r = _call("GET", f"/v3/organizations/{ORG_ID}/sessions/{session_id}" if _v3() else f"/v1/session/{session_id}")
     pr = (r.get("pull_request") or {}).get("url") or next(
         (p.get("url") for p in r.get("pull_requests") or [] if p.get("url")), None)
     return {"status": r.get("status_enum") or r.get("status"), "pr_url": pr}
