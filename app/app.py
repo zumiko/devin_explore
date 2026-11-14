@@ -195,22 +195,14 @@ def kyc_case(case_id):
         if f.get("watchlist_id"):
             f["watchlist"] = g.db.execute("SELECT * FROM watchlist WHERE id = ?", (f["watchlist_id"],)).fetchone()
     face_checks = g.db.execute(
-        "SELECT f.id, f.created_at, f.score, f.verdict, f.details_json, u.name AS run_by_name FROM face_checks f"
-        " JOIN users u ON u.id = f.run_by WHERE f.case_id = ? ORDER BY f.id DESC",
+        "SELECT f.id, f.created_at, f.score, f.verdict, f.source, f.details_json, u.name AS run_by_name"
+        " FROM face_checks f LEFT JOIN users u ON u.id = f.run_by WHERE f.case_id = ? ORDER BY f.id DESC",
         (case_id,),
     ).fetchall()
     return render_template("kyc_case.html", case=case, customer=customer, flags=flags,
                            reasons=KYC_REASONS, history=history("kyc_case", case_id), face_checks=face_checks,
                            face_pass=int(get_setting(g.db, "face_match_pass_score")),
                            face_review=int(get_setting(g.db, "face_match_review_score")))
-
-
-def face_verdict(score_pct):
-    if score_pct >= int(get_setting(g.db, "face_match_pass_score")):
-        return "likely_same_person"
-    if score_pct >= int(get_setting(g.db, "face_match_review_score")):
-        return "reviewer_decides"
-    return "likely_different_people"
 
 
 @app.post("/kyc/<int:case_id>/face-match")
@@ -228,13 +220,15 @@ def kyc_face_match(case_id):
         flash(f"Face match failed: {e}", "error")
         return redirect(url_for("kyc_case", case_id=case_id))
     score_pct = max(0, round(result["score"] * 100))
-    verdict = face_verdict(score_pct)
+    verdict = face_match.verdict(score_pct, int(get_setting(g.db, "face_match_pass_score")),
+                                 int(get_setting(g.db, "face_match_review_score")))
     details = {k: result[k] for k in ("id_faces_found", "selfie_faces_found",
                                       "id_face_confidence", "selfie_face_confidence")}
     details["model"] = "OpenCV YuNet + SFace (cosine similarity)"
     cur = g.db.execute(
-        "INSERT INTO face_checks (case_id, run_by, created_at, score, verdict, id_image, id_image_type,"
-        " selfie_image, selfie_image_type, id_face, selfie_face, details_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO face_checks (case_id, run_by, source, created_at, score, verdict, id_image, id_image_type,"
+        " selfie_image, selfie_image_type, id_face, selfie_face, details_json)"
+        " VALUES (?, ?, 'reviewer_upload', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (case_id, g.user["id"], now_iso(), result["score"], verdict, id_bytes, id_file.mimetype or "image/jpeg",
          selfie_bytes, selfie_file.mimetype or "image/jpeg", result["id_face_jpg"], result["selfie_face_jpg"],
          json.dumps(details)),

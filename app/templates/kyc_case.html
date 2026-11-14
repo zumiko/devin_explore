@@ -29,10 +29,10 @@
       <a href="{{ url_for('face_check_image', check_id=latest.id, kind='id') }}" target="_blank"><img class="doc" src="{{ url_for('face_check_image', check_id=latest.id, kind='id') }}" alt="ID photo"></a>
       <a href="{{ url_for('face_check_image', check_id=latest.id, kind='selfie') }}" target="_blank"><img class="doc" src="{{ url_for('face_check_image', check_id=latest.id, kind='selfie') }}" alt="Selfie"></a>
     </div>
-    <p class="muted small"><a href="#face-match">Face match result below</a></p>
+    <p class="muted small">{% if latest.source == 'signup' %}Submitted by the customer at signup{% else %}Uploaded by {{ latest.run_by_name }}{% endif %} &middot; <a href="#face-match">Face match result</a></p>
     {% else %}
-    <div class="docs"><div class="doc">ID photo<br><small>(none uploaded)</small></div><div class="doc">Selfie<br><small>(none uploaded)</small></div></div>
-    <p class="muted small"><a href="#face-match">Upload them below</a> to run a face match.</p>
+    <div class="docs"><div class="doc">ID photo<br><small>(not in demo data)</small></div><div class="doc">Selfie<br><small>(not in demo data)</small></div></div>
+    <p class="muted small">Only some demo cases have sample documents. <a href="#face-match">Upload some</a> to try a face match.</p>
     {% endif %}
   </section>
   <section>
@@ -98,13 +98,8 @@
 </div>
 <section id="face-match" class="facematch">
   <h3>Face match: ID photo vs selfie</h3>
-  <p class="muted">Upload a (fake) passport or ID photo and a selfie. An open-source model (OpenCV YuNet + SFace) finds the face in each and scores how alike they are, from 0 to 100.
-    In production this score would come from the KYC vendor (e.g. Persona). This demo has no liveness or fake-ID checks.</p>
-  <form method="post" enctype="multipart/form-data" action="{{ url_for('kyc_face_match', case_id=case.id) }}" class="inline upload">
-    <label>ID / passport photo <input type="file" name="id_image" accept="image/*" required></label>
-    <label>Selfie <input type="file" name="selfie" accept="image/*" capture="user" required></label>
-    <button>Compare faces</button>
-  </form>
+  <p class="muted">The customer's ID photo and selfie are compared when they sign up. Here an open-source model (OpenCV YuNet + SFace) plays the part of the verification vendor:
+    it finds the face in each image and scores how alike they are, from 0 to 100. In production this score comes from the vendor (e.g. Persona). No liveness or fake-ID checks in this demo.</p>
   {% if latest %}
   {% set pct = [0, (latest.score * 100)|round|int]|max %}
   {% set d = latest.details_json|fromjson %}
@@ -120,21 +115,28 @@
         <span class="marker" style="left: {{ [pct, 100]|min }}%"></span>
       </div>
       <small>Under {{ face_review }}: likely different people &middot; {{ face_review }}&ndash;{{ face_pass - 1 }}: reviewer decides &middot; {{ face_pass }}+: likely same person (thresholds are on the Rules page)</small><br>
-      <small class="muted">Run by {{ latest.run_by_name }} on {{ latest.created_at|dt }}. Faces detected: ID {{ d.id_faces_found }}, selfie {{ d.selfie_faces_found }}{% if d.id_faces_found > 1 or d.selfie_faces_found > 1 %} (used the largest){% endif %}. Raw similarity {{ '%.3f'|format(latest.score) }}.</small>
+      <small class="muted">{% if latest.source == 'signup' %}Checked automatically at signup{% else %}Re-run by {{ latest.run_by_name }}{% endif %} on {{ latest.created_at|dt }}. Faces detected: ID {{ d.id_faces_found }}, selfie {{ d.selfie_faces_found }}{% if d.id_faces_found > 1 or d.selfie_faces_found > 1 %} (used the largest){% endif %}. Raw similarity {{ '%.3f'|format(latest.score) }}.</small>
     </div>
   </div>
   {% if face_checks|length > 1 %}
   <details><summary>Earlier face matches on this case ({{ face_checks|length - 1 }})</summary>
     <table class="small">
-      <tr><th>When</th><th>Who</th><th>Score</th><th>Result</th><th>Images</th></tr>
+      <tr><th>When</th><th>Source</th><th>Score</th><th>Result</th><th>Images</th></tr>
       {% for f in face_checks[1:] %}
-      <tr><td>{{ f.created_at|dt }}</td><td>{{ f.run_by_name }}</td><td>{{ [0, (f.score * 100)|round|int]|max }}</td><td>{{ f.verdict|label }}</td>
+      <tr><td>{{ f.created_at|dt }}</td><td>{% if f.source == 'signup' %}Signup{% else %}Uploaded by {{ f.run_by_name }}{% endif %}</td><td>{{ [0, (f.score * 100)|round|int]|max }}</td><td>{{ f.verdict|label }}</td>
         <td><a href="{{ url_for('face_check_image', check_id=f.id, kind='id') }}" target="_blank">ID</a> &middot; <a href="{{ url_for('face_check_image', check_id=f.id, kind='selfie') }}" target="_blank">selfie</a></td></tr>
       {% endfor %}
     </table>
   </details>
   {% endif %}
   {% endif %}
+  <h4>{% if latest %}Customer sent new photos?{% else %}No documents on file{% endif %}</h4>
+  <p class="muted small">{% if latest %}For example after you asked for a clearer ID or a selfie retake. Upload them to run the match again; the signup result stays in the record.{% else %}Upload an ID photo and a selfie to run a face match.{% endif %}</p>
+  <form method="post" enctype="multipart/form-data" action="{{ url_for('kyc_face_match', case_id=case.id) }}" class="inline upload">
+    <label>ID / passport photo <input type="file" name="id_image" accept="image/*" required></label>
+    <label>Selfie <input type="file" name="selfie" accept="image/*" required></label>
+    <button>Compare faces</button>
+  </form>
 </section>
 {% include '_history.html' %}
 {% endblock %}

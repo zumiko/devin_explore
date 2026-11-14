@@ -114,7 +114,8 @@ CREATE TABLE IF NOT EXISTS settings (
 CREATE TABLE IF NOT EXISTS face_checks (
   id INTEGER PRIMARY KEY,
   case_id INTEGER NOT NULL REFERENCES kyc_cases(id),
-  run_by INTEGER NOT NULL REFERENCES users(id),
+  run_by INTEGER REFERENCES users(id),
+  source TEXT NOT NULL,
   created_at TEXT NOT NULL,
   score REAL NOT NULL,
   verdict TEXT NOT NULL,

@@ -79,3 +79,11 @@ def compare(id_bytes, selfie_bytes):
         "id_face_confidence": round(id_conf, 2),
         "selfie_face_confidence": round(selfie_conf, 2),
     }
+
+
+def verdict(score_pct, pass_score, review_score):
+    if score_pct >= pass_score:
+        return "likely_same_person"
+    if score_pct >= review_score:
+        return "reviewer_decides"
+    return "likely_different_people"

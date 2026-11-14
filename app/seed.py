@@ -10,6 +10,8 @@ from datetime import datetime, timedelta
 
 from faker import Faker
 
+import face_match
+import kyc_docs
 from db import DB_PATH, audit, connect
 
 SEED = 42
@@ -70,6 +72,14 @@ SETTINGS = [
 ]
 
 
+# Cases whose customers have sample signup documents: case id -> (ID photo face, selfie face).
+# Case 2's selfie is a different person, so the face match flags it.
+SIGNUP_DOCS = {1: ("face_m1.jpg", "face_m1.jpg"), 2: ("face_m2.jpg", "face_m3.jpg"), 3: ("face_f1.jpg", "face_f1.jpg")}
+# More open cases get documents; these customers are renamed to fit the face.
+EXTRA_DOC_CUSTOMERS = [("face_f2.jpg", "Mei Tanaka"), ("face_m4.jpg", "Daniel Novak"),
+                       ("face_f3.jpg", "Emily Carter"), ("face_f4.jpg", "Sarah Whitman")]
+
+
 def iso(dt):
     return dt.isoformat(timespec="seconds")
 
@@ -82,6 +92,25 @@ def migrate():
     conn.executemany("INSERT OR IGNORE INTO settings VALUES (?, ?, ?)", SETTINGS)
     conn.commit()
     conn.close()
+
+
+def signup_face_checks(docs, customers, cases):
+    """Render each customer's ID card and selfie and run the face match, as the vendor would at signup."""
+    settings = {k: int(v) for k, v, _ in SETTINGS}
+    checks = {}
+    try:
+        for cid, (id_face, selfie_face) in docs.items():
+            c = customers[cases[cid - 1]["customer_id"] - 1]
+            id_img = kyc_docs.id_card(id_face, c["name"], c["dob"], f"D{cid:03d}-{c['ssn_last4']}", c["state"])
+            selfie_img = kyc_docs.selfie(selfie_face, seed=cid)
+            result = face_match.compare(id_img, selfie_img)
+            pct = max(0, round(result["score"] * 100))
+            checks[cid] = dict(result, id_image=id_img, selfie_image=selfie_img, pct=pct, verdict=face_match.verdict(
+                pct, settings["face_match_pass_score"], settings["face_match_review_score"]))
+    except Exception as e:  # e.g. offline and the model files can't be downloaded
+        print(f"Skipping sample KYC documents: {e}")
+        return {}
+    return checks
 
 
 def build(db_path=DB_PATH):
@@ -195,6 +224,18 @@ def build(db_path=DB_PATH):
             c["status"] = "pending_kyc"
         kyc_cases.append(case)
 
+    docs = dict(SIGNUP_DOCS)
+    extra = [k for k in kyc_cases if k["id"] > 3 and k["status"] not in ("approved", "rejected")
+             and not any(f["type"] == "selfie_mismatch" for f in k["flags"])]
+    for k, (face, name) in zip(extra, EXTRA_DOC_CUSTOMERS):
+        customers[k["customer_id"] - 1]["name"] = name
+        docs[k["id"]] = (face, face)
+    face_checks = signup_face_checks(docs, customers, kyc_cases)
+    for cid, fc in face_checks.items():
+        for f in kyc_cases[cid - 1]["flags"]:
+            if f["type"] == "selfie_mismatch":
+                f["detail"] = f"Face match score {fc['pct']}/100"
+
     for c in customers:
         conn.execute(
             "INSERT INTO customers VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -221,6 +262,21 @@ def build(db_path=DB_PATH):
             audit(conn, k["decided_by"], f"kyc_{k['decision']}", "kyc_case", k["id"],
                   before={"status": "in_review"}, after={"status": k["decision"], "reason": k["decision_reason"]},
                   reason=k["decision_note"], ts=iso(k["decided_at"]))
+
+    for cid, fc in face_checks.items():
+        ts = iso(kyc_cases[cid - 1]["created_at"])
+        details = {k: fc[k] for k in ("id_faces_found", "selfie_faces_found", "id_face_confidence", "selfie_face_confidence")}
+        details["model"] = "OpenCV YuNet + SFace (cosine similarity)"
+        cur = conn.execute(
+            "INSERT INTO face_checks (case_id, run_by, source, created_at, score, verdict, id_image, id_image_type,"
+            " selfie_image, selfie_image_type, id_face, selfie_face, details_json)"
+            " VALUES (?, NULL, 'signup', ?, ?, ?, ?, 'image/jpeg', ?, 'image/jpeg', ?, ?, ?)",
+            (cid, ts, fc["score"], fc["verdict"], fc["id_image"], fc["selfie_image"], fc["id_face_jpg"],
+             fc["selfie_face_jpg"], json.dumps(details)),
+        )
+        audit(conn, None, "face_match_run", "kyc_case", cid,
+              after={"face_check_id": cur.lastrowid, "score": fc["pct"], "verdict": fc["verdict"]},
+              reason="MockVerify check at signup", ts=ts)
 
     # Transactions for active customers over 90 days
     active_ids = [c["id"] for c in customers if c["status"] == "active"]
