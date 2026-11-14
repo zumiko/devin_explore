@@ -8,7 +8,7 @@
 <body>
 <header>
   <a class="brand" href="{{ url_for('index') }}">AcmePay Internal Tools</a>
-  <nav>
+  {% if not simple %}<nav>
     {% if can('kyc_view') %}<a href="{{ url_for('kyc_list') }}">KYC Queue</a>{% endif %}
     {% if can('refund_view') %}<a href="{{ url_for('refunds') }}">Refunds</a>{% endif %}
     {% if can('approvals_view') %}<a href="{{ url_for('approvals') }}">Approvals{% if pending_count %} <span class="pill">{{ pending_count }}</span>{% endif %}</a>{% endif %}
@@ -20,7 +20,7 @@
     {% if can('settings_view') %}<a href="{{ url_for('settings') }}">Rules</a>{% endif %}
     <a href="{{ url_for('ask_data') }}">Ask the data</a>
     {% if can('kyc_view') %}<a href="{{ url_for('signup') }}" target="_blank">Customer signup &#8599;</a>{% endif %}
-  </nav>
+  </nav>{% else %}<nav></nav>{% endif %}
   {% if sso %}
   <form class="whoami" method="post" action="{{ url_for('logout') }}">
     <label>Signed in with Microsoft as {{ me.name }} ({{ me.role|label }})</label> <button>Sign out</button>

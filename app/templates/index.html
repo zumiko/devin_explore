@@ -1,7 +1,14 @@
 {% extends 'base.html' %}
 {% block content %}
 <h1>Hi {{ me.name.split()[0] }}</h1>
-<p class="muted">{{ me.role|label|capitalize }} · {{ me.team }}. You only see the apps your role uses.{% if not sso %} Switch people in the top right to compare roles.{% endif %}</p>
+<p class="muted">{{ me.role|label|capitalize }} · {{ me.team }}. {% if simple %}Your cases and new ones to pick up.{% else %}You only see the apps your role uses.{% endif %}{% if not sso %} Switch people in the top right to compare roles.{% endif %}</p>
+{% if simple %}
+<div class="cards">
+  <div class="card"><div class="big">{{ my_cases|length }}</div>cases assigned to me</div>
+  <div class="card"><div class="big bad">{{ my_cases|selectattr('sla_due_at', 'lt', now)|list|length }}</div>past deadline</div>
+  <div class="card"><div class="big">{{ unassigned|length }}</div>waiting to be picked up</div>
+</div>
+{% else %}
 <div class="cards">
   {% if can('kyc_view') %}<div class="card"><div class="big">{{ stats.kyc_open }}</div>open KYC cases<br><span class="bad">{{ stats.kyc_overdue }} past deadline</span></div>{% endif %}
   {% if can('kyc_view') %}<div class="card"><div class="big">{{ my_cases|length }}</div>assigned to me</div>{% endif %}
@@ -10,6 +17,7 @@
   {% if can('refund_dashboard') %}<div class="card"><div class="big">{{ stats.refunds_30d|money }}</div>refunded in last 30 days</div>{% endif %}
   {% if can('flag_view') %}<div class="card"><div class="big">{{ stats.flags_on }}</div>feature flags on</div>{% endif %}
 </div>
+{% endif %}
 {% if my_cases %}
 <h2>My KYC cases</h2>
 <table>
@@ -37,10 +45,22 @@
   {% for f in my_flags %}<tr><td>{{ f.key }}</td><td>{{ 'on' if f.enabled else 'off' }}</td><td>{{ f.rollout_pct }}%</td></tr>{% endfor %}
 </table>
 {% endif %}
+{% if unassigned %}
+<h2>Pick up a new case</h2>
+<table>
+  <tr><th>Case</th><th>Customer</th><th>Risk</th><th>Due</th><th></th></tr>
+  {% for c in unassigned %}
+  <tr><td>#{{ c.id }}</td><td>{{ c.name }}</td><td>{{ c.risk_score }}</td><td>{{ c.sla_due_at|dt }}</td>
+    <td><form method="post" action="{{ url_for('kyc_claim', case_id=c.id) }}"><button>Pick up</button></form></td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% if not simple %}
 <h2>Your apps</h2>
 <div class="apps">
   {% for a in apps %}<a class="app" href="{{ url_for(a.endpoint) }}"><b>{{ a.name }}</b><span>{{ a.desc }}</span></a>{% endfor %}
 </div>
+{% endif %}
 {% if not sso or can('settings_edit') %}
 <form method="post" action="{{ url_for('reset') }}" onsubmit="return confirm('Reset all demo data?')" style="margin-top:24px">
   <button class="secondary">Reset demo data</button>
