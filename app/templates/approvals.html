@@ -3,7 +3,7 @@
 <h1>Waiting on my approval</h1>
 <p class="muted small">Steps waiting more than {{ sla }} hours are flagged overdue.</p>
 {% for a in approvals %}
-<div class="flagbox"{% if a.overdue %} style="border-left-color: #c0392b"{% endif %}>
+<div class="flagbox"{% if a.overdue %} style="border-left-color: var(--bad)"{% endif %}>
   <b><a href="{{ url_for('refund_detail', refund_id=a.entity_id) }}">Refund #{{ a.entity_id }}</a> — {{ a.amount_cents|money }}</b>
   to <a href="{{ url_for('customer', customer_id=a.customer_id) }}">{{ a.customer }}</a> &middot; {{ a.reason|label }} &middot;
   requested by {{ a.requester }} &middot; step {{ a.step }} ({{ a.required_role|label }}) &middot;

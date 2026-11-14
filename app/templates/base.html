@@ -3,6 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="robots" content="noindex, nofollow">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
   <title>{% block title %}AcmePay Internal Tools{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
@@ -46,6 +49,16 @@
   {% block content %}{% endblock %}
 </main>
 <script>
+  const navLinks = [...document.querySelectorAll('nav a')].filter(a => a.target !== '_blank');
+  const here = navLinks.filter(a => location.pathname.startsWith(a.pathname)).sort((a, b) => b.pathname.length - a.pathname.length)[0];
+  if (here) here.classList.add('active');
+  const tone = {sent: 'ok', approved: 'ok', auto_approved: 'ok', done: 'ok', live: 'ok', on: 'ok', 'auto-approved': 'ok',
+    'pending approval': 'wait', pending: 'wait', 'in review': 'wait', in_review: 'wait', 'needs info': 'wait', needs_info: 'wait', pending_approval: 'wait', pr_open: 'wait', 'pr open': 'wait', 'info requested': 'wait', escalated: 'wait', building: 'wait', 'awaiting approval': 'wait',
+    rejected: 'no', declined: 'no', failed: 'no', off: 'no', new: 'new', open: 'new'};
+  for (const td of document.querySelectorAll('main td')) {
+    const t = td.textContent.trim().toLowerCase();
+    if (td.children.length === 0 && t in tone) td.innerHTML = `<span class="badge ${tone[t]}">${td.innerHTML.trim()}</span>`;
+  }
   for (const f of document.querySelectorAll('form[method="post"], form[method="POST"]')) {
     const i = document.createElement('input'); i.type = 'hidden'; i.name = 'csrf'; i.value = {{ csrf|tojson }}; f.appendChild(i);
   }

@@ -4,9 +4,10 @@
 <h3>Refunds per week, by reason (last 12 weeks)</h3>
 <canvas id="chart" height="90"></canvas>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>Chart.defaults.font.family = "Inter, system-ui, sans-serif"; Chart.defaults.color = "#64748b"; Chart.defaults.borderColor = "#eef1f7";</script>
 <script>
   const series = {{ series|tojson }};
-  const colors = {fee_error: '#d9534f', duplicate_charge: '#5b8def', service_issue: '#f0ad4e', fraud_claim: '#6f42c1', goodwill: '#5cb85c', cancelled: '#999'};
+  const colors = {fee_error: '#f43f5e', duplicate_charge: '#5b5bf0', service_issue: '#f59e0b', fraud_claim: '#8b5cf6', goodwill: '#10b981', cancelled: '#94a3b8'};
   new Chart(document.getElementById('chart'), {
     type: 'bar',
     data: { labels: {{ labels|tojson }}, datasets: Object.entries(series).map(([k, v]) => ({label: k.replace('_', ' '), data: v, backgroundColor: colors[k]})) },
