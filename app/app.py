@@ -10,7 +10,6 @@ from zoneinfo import ZoneInfo
 
 from flask import Flask, Response, abort, flash, g, redirect, render_template, request, session, url_for
 
-import ask
 import devin_api
 import entra
 import face_match
@@ -60,7 +59,6 @@ APPS = [
     {"perm": "change_request", "endpoint": "change_requests", "name": "Change requests",
      "desc": "Ask for a change to these tools. Admin approves, Devin builds it, an engineer reviews."},
     {"perm": "users_manage", "endpoint": "admin_access", "name": "Users & access", "desc": "Who has which role and what each role can do."},
-    {"perm": "ask_data", "endpoint": "ask_data", "name": "Ask the data", "desc": "Questions in plain English, within your access."},
 ]
 OPEN_KYC = ("new", "in_review", "needs_info", "escalated", "pending_second_review")
 
@@ -1140,30 +1138,6 @@ def kyc_dashboard():
         median_hours=[median(x) for x in review_hours],
         breach_pct=[round(100 * b / m) if m else 0 for b, m in zip(breaches, manual)],
         reviewers=reviewers, summary=summary)
-
-
-@app.route("/ask", methods=["GET", "POST"])
-def ask_data():
-    require("ask_data")
-    tables = ask.allowed_tables(can)
-    question, sql, result, error = request.form.get("question", "").strip(), request.form.get("sql", "").strip(), None, None
-    if request.method == "POST":
-        try:
-            if request.form.get("mode") == "ask":
-                if not question:
-                    raise ask.QueryError("Type a question first.")
-                sql = ask.to_sql(question, ask.schema_text(g.db, tables))
-            result = ask.run(sql, tables)
-        except ask.QueryError as e:
-            error = str(e)
-        except Exception as e:
-            error = f"The AI service call failed: {e}"
-        audit(g.db, g.user["id"], "data_query", "query", 0,
-              after={"question": question or None, "sql": sql, "rows": len(result["rows"]) if result else None,
-                     "masked": result["masked"] if result else None, "error": error})
-        g.db.commit()
-    return render_template("ask.html", question=question, sql=sql, result=result, error=error,
-                           tables=sorted(tables), masked=ask.MASKED, ai=ask.provider())
 
 
 # ---------- Feature flags ----------

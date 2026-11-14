@@ -37,7 +37,6 @@ PERMISSIONS = {
     "refund_rules_edit": ("Rules", "Change refund limits", {"finance"}),
     "audit_view": ("Audit", "Audit log: feature flag changes", {"compliance_lead", "support_lead", "finance", "engineer", "admin"}),
     "audit_view_all": ("Audit", "Audit log: everything (KYC, refunds, rules, access)", {"compliance_lead", "support_lead", "finance", "admin"}),
-    "ask_data": ("Other", "Ask the data in plain English", set(ROLE_KEYS) - {"kyc_analyst", "support_agent"}),
     "change_request": ("Changes", "Ask for changes to these tools",
                        {"kyc_senior", "compliance_lead", "support_lead", "finance", "pm", "engineer", "admin"}),
     "change_approve": ("Changes", "Approve change requests (sends them to Devin)", {"admin"}),
