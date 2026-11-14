@@ -54,8 +54,8 @@
 <pre class="small" style="white-space: pre-wrap">{{ req.prompt }}</pre></details>
 {% endif %}
 
-<h2>History</h2>
+{% if history %}<h2>History</h2>
 <table class="small">
   {% for h in history %}<tr><td>{{ h.ts|dt }}</td><td>{{ h.actor }}</td><td>{{ h.action|replace('change_', '')|replace('_', ' ') }}</td><td>{{ h.reason or '' }}</td></tr>{% endfor %}
-</table>
+</table>{% endif %}
 {% endblock %}
