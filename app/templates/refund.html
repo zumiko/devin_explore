@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block content %}
+<p><a href="{{ url_for('refunds') }}">&larr; Refunds</a></p>
+<h1>Refund #{{ r.id }} — {{ r.amount_cents|money }}</h1>
+<table class="kv">
+  <tr><th>Status</th><td><b>{{ r.status|label }}</b></td></tr>
+  <tr><th>Customer</th><td><a href="{{ url_for('customer', customer_id=r.customer_id) }}">{{ r.customer }}</a></td></tr>
+  <tr><th>Original transaction</th><td>{{ r.description }} — {{ r.txn_amount|money }} on {{ r.txn_at|dt }}</td></tr>
+  <tr><th>Reason</th><td>{{ r.reason|label }}</td></tr>
+  <tr><th>Note</th><td>{{ r.note }}</td></tr>
+  <tr><th>Requested by</th><td>{{ r.requester }} on {{ r.created_at|dt }}</td></tr>
+  {% if r.risk_json %}<tr><th>Sent for approval because</th><td>{{ r.risk_json|fromjson|join('; ') }}</td></tr>{% endif %}
+</table>
+<h3>Approvals</h3>
+<table>
+  <tr><th>Step</th><th>Needs</th><th>Status</th><th>By</th><th>When</th><th>Comment</th></tr>
+  {% for a in approvals %}
+  <tr><td>{{ a.step }}</td><td>{{ a.required_role|label }}</td><td>{{ a.status }}</td><td>{{ a.approver or '' }}</td><td>{{ a.decided_at|dt }}</td><td>{{ a.comment or '' }}</td></tr>
+  {% else %}<tr><td colspan="6" class="muted">No approval needed (under auto-approve limit)</td></tr>{% endfor %}
+</table>
+{% if messages %}<h3>Sent to the customer</h3>
+<table class="small">{% for m in messages %}<tr><td>{{ m.created_at|dt }}</td><td>{{ m.channel }}</td><td>{{ m.subject or m.body }}</td><td class="muted">{{ m.status }}</td></tr>{% endfor %}</table>{% endif %}
+{% include '_history.html' %}
+{% endblock %}

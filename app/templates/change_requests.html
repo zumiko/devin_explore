@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>Change requests</h1>
+<p class="muted">Need something changed in these tools? Describe it here. The admin approves it, Devin writes the code and opens a pull request, an engineer reviews and ships it, and you confirm it works.</p>
+<p><a class="button" href="{{ url_for('change_request_new') }}">New request</a></p>
+<table>
+  <tr><th>#</th><th>Request</th>{% if everyone %}<th>From</th>{% endif %}<th>Status</th><th>Updated</th></tr>
+  {% for r in rows %}
+  <tr><td>{{ r.id }}</td><td><a href="{{ url_for('change_request', req_id=r.id) }}">{{ r.title }}</a></td>
+    {% if everyone %}<td>{{ r.requester }}</td>{% endif %}<td>{{ labels[r.status] }}</td><td>{{ r.updated_at|dt }}</td></tr>
+  {% else %}<tr><td colspan="5" class="muted">No requests yet.</td></tr>{% endfor %}
+</table>
+{% endblock %}

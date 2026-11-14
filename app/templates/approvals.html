@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>Waiting on my approval</h1>
+<p class="muted small">Steps waiting more than {{ sla }} hours are flagged overdue.</p>
+{% for a in approvals %}
+<div class="flagbox"{% if a.overdue %} style="border-left-color: #c0392b"{% endif %}>
+  <b><a href="{{ url_for('refund_detail', refund_id=a.entity_id) }}">Refund #{{ a.entity_id }}</a> — {{ a.amount_cents|money }}</b>
+  to <a href="{{ url_for('customer', customer_id=a.customer_id) }}">{{ a.customer }}</a> &middot; {{ a.reason|label }} &middot;
+  requested by {{ a.requester }} &middot; step {{ a.step }} ({{ a.required_role|label }}) &middot;
+  {% if a.overdue %}<b class="bad">overdue, waiting {{ a.waiting_hours }}h</b>{% else %}waiting {{ a.waiting_hours }}h{% endif %}
+  <p>“{{ a.note }}”</p>
+  {% if a.risks %}<p class="small"><b>Sent for approval because:</b> {{ a.risks|join('; ') }}</p>{% endif %}
+  <p class="small muted">Customer: {{ a.cust_count }} other refund{{ '' if a.cust_count == 1 else 's' }} in 90 days ({{ a.cust_sum|money }}).
+    {{ a.requester.split()[0] }}: {{ a.agent_count }} refunds in 7 days ({{ a.agent_sum|money }}){% if a.agent_near_limit %},
+    <span class="{{ 'bad' if a.agent_near_limit >= 3 else '' }}">{{ a.agent_near_limit }} just under the {{ auto_max|money }} auto-approve limit</span>{% endif %}.</p>
+  <form method="post" action="{{ url_for('approval_decide', approval_id=a.id) }}" class="inline">
+    <input name="comment" placeholder="Comment (required to reject)" size="40">
+    <button name="decision" value="approved">Approve</button>
+    <button name="decision" value="rejected" class="danger">Reject</button>
+  </form>
+</div>
+{% else %}
+<p class="muted">Nothing waiting on you.</p>
+{% endfor %}
+{% endblock %}

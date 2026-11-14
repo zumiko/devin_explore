@@ -1,0 +1,42 @@
+{% extends 'customer_base.html' %}
+{% block title %}Open an account · AcmePay{% endblock %}
+{% block content %}
+{% if result == 'approved' %}
+  <div class="result">
+    <div class="icon ok">&#10003;</div>
+    <h1>You're verified, {{ name.split()[0] }}!</h1>
+    <p class="sub">Your identity checks passed and your account is ready to use.</p>
+  </div>
+{% elif result == 'review' %}
+  <div class="result">
+    <div class="icon wait" style="font-size:26px;font-weight:700">48h</div>
+    <h1>Thanks, {{ name.split()[0] }}. We'll be in touch soon.</h1>
+    <p class="sub">We need a little more time to verify your identity. Our team usually gets back to you within 48 hours, by email.</p>
+  </div>
+{% else %}
+  <h1>Open an account</h1>
+  <p class="sub">It takes about two minutes. We'll check your ID and selfie to confirm it's you.</p>
+  {% with messages = get_flashed_messages(with_categories=true) %}{% for cat, msg in messages %}<p class="error">{{ msg }}</p>{% endfor %}{% endwith %}
+  <form method="post" enctype="multipart/form-data">
+    <label>Full legal name<input name="name" value="{{ form.name }}" required></label>
+    <div class="row">
+      <div><label>Email<input type="email" name="email" value="{{ form.email }}" required></label></div>
+      <div><label>Mobile number<input type="tel" name="phone" value="{{ form.phone }}" placeholder="+1 212 555 0100" required></label></div>
+    </div>
+    <div class="row">
+      <div><label>Date of birth<input type="date" name="dob" value="{{ form.dob }}" required></label></div>
+      <div><label>Last 4 of SSN<input name="ssn_last4" value="{{ form.ssn_last4 }}" maxlength="4" pattern="[0-9]{4}" required></label></div>
+    </div>
+    <div class="row">
+      <div style="flex:3"><label>Street address and city<input name="address" value="{{ form.address }}" required></label></div>
+      <div><label>State<input name="state" value="{{ form.state }}" maxlength="2" placeholder="NY" required></label></div>
+    </div>
+    <div class="photo"><label style="margin-top:0">Photo of your driver's license or passport<input type="file" name="id_image" accept="image/*" required></label><small>Make sure your face and details are clearly visible.</small></div>
+    <div class="photo"><label style="margin-top:0">A selfie<input type="file" name="selfie" accept="image/*" capture="user" required></label><small>Face the camera in good light, no hat or sunglasses.</small></div>
+    <button>Verify my identity</button>
+  </form>
+{% endif %}
+{% if result %}
+  <p class="staff">Demo only, not shown to real customers: this created <a href="{{ url_for('kyc_case', case_id=case_id) }}">KYC case #{{ case_id }}</a>{% if result == 'approved' %}, already auto-approved{% else %} in the review queue{% endif %}. <a href="{{ url_for('signup') }}">Start another signup</a></p>
+{% endif %}
+{% endblock %}

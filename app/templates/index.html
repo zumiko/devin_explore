@@ -1,0 +1,121 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>Hi {{ me.name.split()[0] }}</h1>
+<p class="muted">{{ me.role|label|capitalize }} · {{ me.team }}. {% if simple and can('kyc_view') %}Your cases and new ones to pick up.{% elif simple %}Your refunds and customer lookup.{% else %}You only see the apps your role uses.{% endif %}{% if not sso %} Switch people in the top right to compare roles.{% endif %}</p>
+{% if simple and can('kyc_view') %}
+<div class="cards">
+  <div class="card"><div class="big">{{ my_cases|length }}</div>cases assigned to me</div>
+  <div class="card"><div class="big bad">{{ my_cases|selectattr('sla_due_at', 'lt', now)|list|length }}</div>past deadline</div>
+  <div class="card"><div class="big">{{ unassigned|length }}</div>waiting to be picked up</div>
+</div>
+{% elif simple %}
+<div class="cards">
+  <div class="card"><div class="big">{{ my_refunds|selectattr('status', 'eq', 'pending_approval')|list|length }}</div>of my refunds waiting for approval</div>
+  <div class="card"><div class="big">{{ my_refunds|selectattr('status', 'eq', 'sent')|list|length }}</div>of my recent refunds sent</div>
+</div>
+<h2>Refund a customer</h2>
+<form class="row" method="get" action="{{ url_for('customers') }}">
+  <input name="q" placeholder="Customer name, email or ID" required autofocus>
+  <button>Find customer</button>
+</form>
+<p class="muted">Open the customer, then click Refund next to the charge.</p>
+{% else %}
+<div class="cards">
+  {% if can('kyc_view') %}<div class="card"><div class="big">{{ stats.kyc_open }}</div>open KYC cases<br><span class="bad">{{ stats.kyc_overdue }} past deadline</span></div>{% endif %}
+  {% if can('kyc_view') %}<div class="card"><div class="big">{{ my_cases|length }}</div>assigned to me</div>{% endif %}
+  {% if can('approvals_view') %}<div class="card"><div class="big">{{ approvals|length }}</div>refunds waiting on me</div>{% endif %}
+  {% if can('refund_view') %}<div class="card"><div class="big">{{ stats.refunds_pending }}</div>refunds waiting for approval</div>{% endif %}
+  {% if can('refund_dashboard') %}<div class="card"><div class="big">{{ stats.refunds_30d|money }}</div>refunded in last 30 days</div>{% endif %}
+  {% if can('flag_view') %}<div class="card"><div class="big">{{ stats.flags_on }}</div>feature flags on</div>{% endif %}
+</div>
+{% endif %}
+{% if team %}
+<h2>Waiting on my second sign-off</h2>
+{% if team.signoff %}<table>
+  <tr><th>Case</th><th>Customer</th><th>First approval</th><th>Risk</th><th>Due</th></tr>
+  {% for c in team.signoff %}<tr><td><a href="{{ url_for('kyc_case', case_id=c.id) }}">#{{ c.id }}</a></td><td>{{ c.name }}</td><td>{{ c.first_decider }}</td><td>{{ c.risk_score }}</td><td>{{ c.sla_due_at|dt }}</td></tr>{% endfor %}
+</table>{% else %}<p class="muted">Nothing waiting.</p>{% endif %}
+{% if team.escalated %}
+<h2>Escalated, needs a senior</h2>
+<table>
+  <tr><th>Case</th><th>Customer</th><th>Risk</th><th>Due</th></tr>
+  {% for c in team.escalated %}<tr><td><a href="{{ url_for('kyc_case', case_id=c.id) }}">#{{ c.id }}</a></td><td>{{ c.name }}</td><td>{{ c.risk_score }}</td><td>{{ c.sla_due_at|dt }}</td></tr>{% endfor %}
+</table>
+{% endif %}
+<h2>Who's holding what</h2>
+<table>
+  <tr><th>Reviewer</th><th>Open cases</th><th>Past deadline</th></tr>
+  {% for h in team.holding %}<tr><td>{{ h.name }}</td><td>{{ h.open }}</td><td class="{{ 'bad' if h.overdue else '' }}">{{ h.overdue }}</td></tr>{% endfor %}
+</table>
+{% if team.overdue %}
+<h2>Past deadline across the team</h2>
+<table>
+  <tr><th>Case</th><th>Customer</th><th>Status</th><th>With</th><th>Due</th></tr>
+  {% for c in team.overdue %}<tr><td><a href="{{ url_for('kyc_case', case_id=c.id) }}">#{{ c.id }}</a></td><td>{{ c.name }}</td><td>{{ c.status|label }}</td><td>{{ c.assignee or 'unassigned' }}</td><td class="bad">{{ c.sla_due_at|dt }}</td></tr>{% endfor %}
+</table>
+{% endif %}
+{% endif %}
+{% if my_cases %}
+<h2>My KYC cases</h2>
+<table>
+  <tr><th>Case</th><th>Customer</th><th>Status</th><th>Risk</th><th>Due</th></tr>
+  {% for c in my_cases %}
+  <tr><td><a href="{{ url_for('kyc_case', case_id=c.id) }}">#{{ c.id }}</a></td><td>{{ c.name }}</td><td>{{ c.status|label }}</td><td>{{ c.risk_score }}</td><td>{{ c.sla_due_at|dt }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% if approvals %}
+<h2>Waiting on my approval</h2>
+<p><a href="{{ url_for('approvals') }}">{{ approvals|length }} refund(s) need your sign-off &rarr;</a></p>
+{% endif %}
+{% if my_refunds %}
+<h2>My recent refunds</h2>
+<table>
+  <tr><th>Customer</th><th>Amount</th><th>Reason</th><th>Status</th><th>When</th></tr>
+  {% for r in my_refunds %}<tr><td><a href="{{ url_for('refund_detail', refund_id=r.id) }}">{{ r.name }}</a></td><td>{{ r.amount_cents|money }}</td><td>{{ r.reason|label }}</td><td>{{ r.status|label }}</td><td>{{ r.created_at|dt }}</td></tr>{% endfor %}
+</table>
+{% endif %}
+{% if review_requests %}
+<h2>Change requests waiting on you</h2>
+<table>
+  <tr><th>Request</th><th>Status</th><th>Updated</th></tr>
+  {% for r in review_requests %}<tr><td><a href="{{ url_for('change_request', req_id=r.id) }}">#{{ r.id }} {{ r.title }}</a></td><td>{{ cr_labels[r.status] }}</td><td>{{ r.updated_at|dt }}</td></tr>{% endfor %}
+</table>
+{% endif %}
+{% if my_requests %}
+<h2>My change requests</h2>
+<table>
+  <tr><th>Request</th><th>Status</th><th>Updated</th></tr>
+  {% for r in my_requests %}<tr><td><a href="{{ url_for('change_request', req_id=r.id) }}">#{{ r.id }} {{ r.title }}</a></td>
+    <td>{% if r.status == 'live' %}<b>Live now: check it and confirm</b>{% else %}{{ cr_labels[r.status] }}{% endif %}</td><td>{{ r.updated_at|dt }}</td></tr>{% endfor %}
+</table>
+{% endif %}
+{% if my_flags %}
+<h2>Flags I own</h2>
+<table>
+  <tr><th>Flag</th><th>State</th><th>Rollout</th></tr>
+  {% for f in my_flags %}<tr><td>{{ f.key }}</td><td>{{ 'on' if f.enabled else 'off' }}</td><td>{{ f.rollout_pct }}%</td></tr>{% endfor %}
+</table>
+{% endif %}
+{% if unassigned %}
+<h2>Pick up a new case</h2>
+<table>
+  <tr><th>Case</th><th>Customer</th><th>Risk</th><th>Due</th><th></th></tr>
+  {% for c in unassigned %}
+  <tr><td>#{{ c.id }}</td><td>{{ c.name }}</td><td>{{ c.risk_score }}</td><td>{{ c.sla_due_at|dt }}</td>
+    <td><form method="post" action="{{ url_for('kyc_claim', case_id=c.id) }}"><button>Pick up</button></form></td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% if not simple %}
+<h2>Your apps</h2>
+<div class="apps">
+  {% for a in apps %}<a class="app" href="{{ url_for(a.endpoint) }}"><b>{{ a.name }}</b><span>{{ a.desc }}</span></a>{% endfor %}
+</div>
+{% endif %}
+{% if not sso or can('users_manage') %}
+<form method="post" action="{{ url_for('reset') }}" onsubmit="return confirm('Reset all demo data?')" style="margin-top:24px">
+  <button class="secondary">Reset demo data</button>
+</form>
+{% endif %}
+{% endblock %}

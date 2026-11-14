@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+{% block content %}
+<p><a href="{{ url_for('admin_access') }}">&larr; Users &amp; access</a></p>
+<h1>{{ user.name }}</h1>
+<p class="muted">In Entra group <span class="mono">{{ group }}</span>. Untick anything this person shouldn't have, even though their group does. You can only take away, not add; to give more, change their group.</p>
+<form method="post" class="stack narrow">
+  {% for p in group_perms %}
+  <label class="row"><input type="checkbox" name="{{ p }}" {% if p not in restricted %}checked{% endif %}> {{ perms[p][0] }}: {{ perms[p][1] }}</label>
+  {% else %}<p class="muted">This group has no permissions to restrict.</p>{% endfor %}
+  <label>Reason (goes to the audit log)<input name="reason" placeholder="e.g. new starter, still in training"></label>
+  <button>Save</button>
+</form>
+{% endblock %}

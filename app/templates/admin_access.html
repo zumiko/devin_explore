@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>Users &amp; access</h1>
+<p class="muted">Two layers: <b>Entra groups</b> decide what a whole group sees, and <b>per-person restrictions</b> can take something away from one person inside their group. Pages check both on the server. Every change goes to the audit log.</p>
+
+<h2>People</h2>
+<p class="muted small">{% if sso %}Group membership is managed in Entra and read at each sign-in.{% else %}Demo mode: group membership would be managed in Entra. The dropdown simulates moving someone to another group.{% endif %}</p>
+<table>
+  <tr><th>Name</th><th>Entra group</th><th>Restrictions</th><th>What they end up with</th><th></th></tr>
+  {% for u in users %}
+  {% set mine = granted.get(u.role, []) | reject('in', restricted.get(u.id, [])) | list %}
+  <tr>
+    <td>{{ u.name }}<br><small class="muted">{{ u.team }} · {{ u.email }}</small></td>
+    <td>
+      <form method="post" action="{{ url_for('admin_set_role', user_id=u.id) }}">
+        <select name="role" class="mono small" onchange="this.form.submit()" {% if sso or u.id == me.id %}disabled title="{{ 'Managed in Entra' if sso else 'You cannot change your own group' }}"{% endif %}>
+          {% for key, name, _ in roles %}<option value="{{ key }}" {% if key == u.role %}selected{% endif %}>{{ group(key) }}</option>{% endfor %}
+        </select>
+      </form>
+    </td>
+    <td class="small">{% for p in restricted.get(u.id, []) %}<span class="bad">no {{ perms[p][1]|lower }}</span><br>{% else %}<span class="muted">none</span>{% endfor %}</td>
+    <td class="small">{{ apps(mine)|join(', ') or 'Home page only' }}
+      {% if 'kyc_view' in mine and 'kyc_view_all' not in mine %}<br><span class="muted">KYC: own and unassigned cases only</span>{% endif %}
+      {% if 'customer_view' in mine and 'customer_pii' not in mine %}<br><span class="muted">Customers: personal details hidden</span>{% endif %}</td>
+    <td>{% if u.id != me.id %}<a href="{{ url_for('admin_user', user_id=u.id) }}">Restrict&hellip;</a>{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<h2>What each Entra group can see and do</h2>
+<p class="muted">Tick to grant to everyone in the group. Changes apply on their next click.</p>
+<form method="post" action="{{ url_for('admin_set_permissions') }}">
+<table class="small matrix">
+  <tr><th>Area</th><th>Permission</th>{% for key, name, job in roles %}<th title="{{ job }}"><span class="mono">{{ group(key)|replace('AcmePay-', '') }}</span></th>{% endfor %}</tr>
+  {% for perm, (area, desc, _) in perms.items() %}
+  <tr>
+    <td class="muted">{{ area }}</td><td>{{ desc }}</td>
+    {% for key, _, _ in roles %}
+    <td class="center"><input type="checkbox" name="{{ key }}:{{ perm }}" {% if perm in granted.get(key, []) %}checked{% endif %}
+      {% if (key, perm) in locked %}disabled title="Kept so admins can't lock themselves out"{% endif %}></td>
+    {% endfor %}
+  </tr>
+  {% endfor %}
+</table>
+<p class="muted small">Group names are shown without the "AcmePay-" prefix. Hover a column for what the group is for.</p>
+<button>Save group permissions</button>
+</form>
+{% endblock %}

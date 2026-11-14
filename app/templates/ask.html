@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>Ask the data</h1>
+<p class="muted">Ask a question in plain English. An AI model writes the database query, and you see the query before trusting the answer.
+  It only runs read-only, only on what your role can see, and personal details (email, phone, address, date of birth, SSN) always come back blank. Every question is logged in the audit log.</p>
+<form method="post" class="panel">
+  <input type="hidden" name="mode" value="ask">
+  <input name="question" value="{{ question }}" placeholder="e.g. How many cases did each reviewer approve last week?" style="width:70%">
+  <button {{ 'disabled' if not ai }}>Ask</button>
+  {% if not ai %}<p class="small bad">No AI provider configured (set ANTHROPIC_API_KEY or OPENAI_API_KEY). You can still write SQL below to try the safety checks.</p>{% endif %}
+  <p class="small muted">Try: "Which reviewer has the most overdue open cases?" · "Auto-approval rate by week for the last 8 weeks" · "Top refund reasons this month by total amount"</p>
+</form>
+<form method="post" class="panel">
+  <input type="hidden" name="mode" value="sql"><input type="hidden" name="question" value="{{ question }}">
+  <label class="small muted">Query that runs (edit and re-run if you like)</label><br>
+  <textarea name="sql" rows="5" class="mono" style="width:100%">{{ sql }}</textarea><br>
+  <button>Run query</button>
+</form>
+{% if error %}<p class="bad">{{ error }}</p>{% endif %}
+{% if result %}
+  <p class="small muted">{{ result.rows|length }} row{{ '' if result.rows|length == 1 else 's' }}{% if result.truncated %} (first 200 only){% endif %}.
+    {% if result.masked %}Blanked for privacy: {{ result.masked|join(', ') }}.{% endif %}</p>
+  <table class="small">
+    <tr>{% for c in result.columns %}<th>{{ c }}</th>{% endfor %}</tr>
+    {% for r in result.rows %}<tr>{% for v in r %}<td>{{ '(hidden)' if v is none else v }}</td>{% endfor %}</tr>{% endfor %}
+  </table>
+{% endif %}
+<details class="small"><summary>What your role ({{ me.role|label }}) can query</summary>
+  <p>{% for t in tables %}<span class="mono">{{ t }}</span>{% if masked.get(t) %} (no {{ masked[t]|join(', ') }}){% endif %}{{ ', ' if not loop.last }}{% endfor %}</p>
+</details>
+{% endblock %}

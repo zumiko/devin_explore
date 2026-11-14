@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>Refunds</h1>
+<p class="muted">To start a refund, find the customer on the <a href="{{ url_for('customers') }}">Customers</a> page and click “Refund” next to the transaction.</p>
+{% if can('refund_export') %}<form method="get" action="{{ url_for('refunds_export') }}" class="row small">
+  <label>Sent from <input type="date" name="from"></label><label>to <input type="date" name="to"></label>
+  <button class="secondary">Export sent refunds (CSV)</button></form>{% endif %}
+<p class="tabs">
+  {% for s, name in [('', 'All'), ('pending_approval', 'Waiting approval'), ('sent', 'Sent'), ('rejected', 'Rejected')] %}
+  <a href="?status={{ s }}" class="{% if s == status %}active{% endif %}">{{ name }}</a>
+  {% endfor %}
+</p>
+<table>
+  <tr><th>#</th><th>When</th><th>Customer</th><th>Amount</th><th>Reason</th><th>Status</th><th>Requested by</th></tr>
+  {% for r in refunds %}
+  <tr><td><a href="{{ url_for('refund_detail', refund_id=r.id) }}">{{ r.id }}</a></td><td>{{ r.created_at|dt }}</td>
+    <td><a href="{{ url_for('customer', customer_id=r.customer_id) }}">{{ r.customer }}</a></td><td>{{ r.amount_cents|money }}</td>
+    <td>{{ r.reason|label }}</td><td>{{ r.status|label }}</td><td>{{ r.requester }}</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

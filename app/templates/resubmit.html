@@ -1,0 +1,23 @@
+{% extends 'customer_base.html' %}
+{% block title %}Upload documents · AcmePay{% endblock %}
+{% block content %}
+{% if state == 'invalid' %}
+  <div class="result"><h1>This link has expired</h1><p class="sub">Links work for 7 days and only once. Reply to our email and we'll send a new one.</p></div>
+{% elif state == 'done' %}
+  <div class="result">
+    <div class="icon ok">&#10003;</div>
+    <h1>Thanks, {{ name.split()[0] }}. We've got them.</h1>
+    <p class="sub">Our team will review your new documents and get back to you, usually within 48 hours.</p>
+  </div>
+  <p class="staff">Demo only: the new photos are on <a href="{{ url_for('kyc_case', case_id=case_id) }}">KYC case #{{ case_id }}</a>, which is back in the review queue.</p>
+{% else %}
+  <h1>Hi {{ name.split()[0] }}, please upload new photos</h1>
+  <p class="sub">{{ ask }}</p>
+  {% with messages = get_flashed_messages(with_categories=true) %}{% for cat, msg in messages %}<p class="error">{{ msg }}</p>{% endfor %}{% endwith %}
+  <form method="post" enctype="multipart/form-data">
+    <div class="photo"><label style="margin-top:0">Photo of your driver's license or passport<input type="file" name="id_image" accept="image/*" required></label><small>Flat on a table, good light, all four corners visible.</small></div>
+    <div class="photo"><label style="margin-top:0">A new selfie<input type="file" name="selfie" accept="image/*" capture="user" required></label><small>Face the camera in good light, no hat or sunglasses.</small></div>
+    <button>Send my photos</button>
+  </form>
+{% endif %}
+{% endblock %}

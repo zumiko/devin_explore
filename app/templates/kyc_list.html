@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>{{ 'KYC review queue' if can('kyc_view_all') else 'My KYC queue' }}</h1>
+{% if not can('kyc_view_all') %}<p class="muted">Your cases and unassigned ones you can pick up. Seniors and compliance see the whole queue.</p>{% endif %}
+<p class="tabs">
+  {% for v in views %}
+  <a href="?view={{ v }}" class="{% if v == view %}active{% endif %}">{{ v|capitalize }}</a>
+  {% endfor %}
+</p>
+<table>
+  <tr><th>Case</th><th>Customer</th><th>Type</th><th>Risk</th><th>Flags</th><th>Status</th><th>Assigned</th><th>Due</th></tr>
+  {% for c in cases %}
+  {% set overdue = c.status not in ('approved', 'rejected') and c.sla_due_at < now %}
+  <tr>
+    <td><a href="{{ url_for('kyc_case', case_id=c.id) }}">#{{ c.id }}</a></td>
+    <td>{{ c.name }}</td>
+    <td>{{ c.account_type }}</td>
+    <td><span class="risk {% if c.risk_score >= 70 %}high{% elif c.risk_score >= 50 %}med{% endif %}">{{ c.risk_score }}</span></td>
+    <td>{% for f in c.flags_json|fromjson %}<span class="tag">{{ f.type|label }}</span>{% endfor %}</td>
+    <td>{{ c.status|label }}</td>
+    <td>{{ c.assignee or '—' }}</td>
+    <td class="{% if overdue %}bad{% endif %}">{{ c.sla_due_at|dt }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}

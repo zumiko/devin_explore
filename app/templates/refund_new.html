@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>New refund</h1>
+<p>{{ txn.customer }} &middot; {{ txn.description }} &middot; {{ txn.amount_cents|money }} on {{ txn.created_at|dt }}
+&middot; up to <b>{{ remaining|money }}</b> can still be refunded.</p>
+<p class="muted">Rules: up to {{ auto_max|money }} is approved automatically; up to {{ lead_max|money }} needs a support lead; above that needs a support lead, then finance.</p>
+<p class="muted small">Your auto-approved refunds today: {{ used_today|money }} of your {{ daily_max|money }} daily limit. Repeat refunds to the same customer, old charges, customers without an approved identity check, and splitting a refund also go to a lead.</p>
+<form method="post" class="stack narrow">
+  <label>Amount ($)<input name="amount" type="number" step="0.01" min="0.01" max="{{ remaining / 100 }}" value="{{ remaining / 100 }}"></label>
+  <label>Reason<select name="reason">{% for r in reasons %}<option value="{{ r }}">{{ r|label }}</option>{% endfor %}</select></label>
+  <label>Note (required)<textarea name="note" rows="3"></textarea></label>
+  <button>Submit refund</button>
+</form>
+{% endblock %}

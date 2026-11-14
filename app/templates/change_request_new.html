@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block content %}
+<p><a href="{{ url_for('change_requests') }}">&larr; Change requests</a></p>
+<h1>New change request</h1>
+<form method="post" class="stack narrow">
+  <label>What do you need?<input name="title" value="{{ form.get('title', '') }}" placeholder="e.g. Add a 'source of funds' field to KYC cases" required></label>
+  <label>Details: who uses it, when, and what "done" looks like
+    <textarea name="details" rows="7" required placeholder="e.g. For high-risk customers, reviewers record where the money comes from before approving.">{{ form.get('details', '') }}</textarea></label>
+  <button>Send for approval</button>
+</form>
+{% endblock %}

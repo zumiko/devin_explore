@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>Refund dashboard</h1>
+<h3>Refunds per week, by reason (last 12 weeks)</h3>
+<canvas id="chart" height="90"></canvas>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+  const series = {{ series|tojson }};
+  const colors = {fee_error: '#d9534f', duplicate_charge: '#5b8def', service_issue: '#f0ad4e', fraud_claim: '#6f42c1', goodwill: '#5cb85c', cancelled: '#999'};
+  new Chart(document.getElementById('chart'), {
+    type: 'bar',
+    data: { labels: {{ labels|tojson }}, datasets: Object.entries(series).map(([k, v]) => ({label: k.replace('_', ' '), data: v, backgroundColor: colors[k]})) },
+    options: { scales: { x: { stacked: true }, y: { stacked: true } } }
+  });
+</script>
+<div class="cols">
+  <section>
+    <h3>Last 30 days by reason (sent)</h3>
+    <table><tr><th>Reason</th><th>Count</th><th>Total</th></tr>
+      {% for r in by_reason %}<tr><td>{{ r.reason|label }}</td><td>{{ r.n }}</td><td>{{ r.total|money }}</td></tr>{% endfor %}</table>
+    <h3>Last 30 days by agent</h3>
+    <table><tr><th>Agent</th><th>Refunds</th><th>Total</th></tr>
+      {% for r in by_agent %}<tr><td>{{ r.name }}</td><td>{{ r.n }}</td><td>{{ r.total|money }}</td></tr>{% endfor %}</table>
+  </section>
+  <section>
+    <h3>Customers with 3+ refunds in 30 days</h3>
+    <table><tr><th>Customer</th><th>Refunds</th><th>Total</th></tr>
+      {% for r in repeaters %}<tr><td>{% if can('customer_view') %}<a href="{{ url_for('customer', customer_id=r.id) }}">{{ r.name }}</a>{% else %}{{ r.name }}{% endif %}</td><td>{{ r.n }}</td><td>{{ r.total|money }}</td></tr>
+      {% else %}<tr><td colspan="3" class="muted">None</td></tr>{% endfor %}</table>
+    <h3>Feature flag changes in this period</h3>
+    <table class="small"><tr><th>When</th><th>Flag</th><th>Change</th><th>By</th></tr>
+      {% for f in flag_changes %}<tr><td>{{ f.ts|dt }}</td><td>{{ f.key }}</td><td class="mono">{{ f.after_json }}</td><td>{{ f.name }}</td></tr>{% endfor %}</table>
+  </section>
+</div>
+{% endblock %}
