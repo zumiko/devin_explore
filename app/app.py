@@ -24,6 +24,9 @@ app.config.update(
     SESSION_COOKIE_SECURE=os.environ.get("PUBLIC_BASE_URL", "").startswith("https://"),
     PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
 )
+if not entra.enabled():
+    # Demo mode is often viewed inside an embedded preview frame, where Lax cookies are dropped.
+    app.config.update(SESSION_COOKIE_SAMESITE="None", SESSION_COOKIE_SECURE=True, SESSION_COOKIE_PARTITIONED=True)
 if entra.enabled() and app.secret_key == "demo-only-not-secret":
     raise SystemExit("Set SECRET_KEY when Microsoft sign-in is on.")
 PUBLIC_ENDPOINTS = {"static", "signup", "resubmit", "login", "auth_callback", "logged_out"}
