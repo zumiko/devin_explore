@@ -271,9 +271,12 @@ def auth_callback():
     audit(g.db, uid, "sign_in", "user", uid, after={"via": "entra", "groups": ident["groups"], "role": ident["role"]})
     g.db.commit()
     nxt = session.pop("next", "/")
+    access = session.get("access")
     session.clear()
     session.permanent = True
     session.update(user_id=uid, csrf=secrets.token_urlsafe(24))
+    if access:
+        session["access"] = access
     return redirect(nxt)
 
 
