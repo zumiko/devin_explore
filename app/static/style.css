@@ -64,3 +64,4 @@ form.upload label { display: flex; flex-direction: column; gap: 4px; }
 .marker { position: absolute; top: -4px; width: 4px; height: 22px; background: #1f2a44; border-radius: 2px; transform: translateX(-2px); }
 .msgbody { white-space: pre-wrap; font: inherit; background: #f6f8fb; padding: 8px; border-radius: 4px; max-width: 520px; }
 form.row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.panel { background: #fff; border: 1px solid #e3e7ee; border-radius: 6px; padding: 12px; margin: 10px 0; }

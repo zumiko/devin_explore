@@ -18,6 +18,7 @@
     {% if can('customer_view') %}<a href="{{ url_for('customers') }}">Customers</a>{% endif %}
     {% if can('audit_view') %}<a href="{{ url_for('audit_log') }}">Audit Log</a>{% endif %}
     <a href="{{ url_for('settings') }}">Rules</a>
+    <a href="{{ url_for('ask_data') }}">Ask the data</a>
     <a href="{{ url_for('signup') }}" target="_blank">Customer signup &#8599;</a>
   </nav>
   <form class="whoami" method="post" action="{{ url_for('switch_user') }}">

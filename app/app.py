@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 from flask import Flask, Response, abort, flash, g, redirect, render_template, request, session, url_for
 
+import ask
 import face_match
 import notify
 import ocr
@@ -28,6 +29,7 @@ PERMS = {
     "customer_pii": KYC_ROLES,
     "refund_view": {"support_agent", "support_lead", "finance", "compliance_lead", "admin"},
     "refund_request": {"support_agent", "support_lead", "admin"},
+    "ask_data": ALL_ROLES,
     "kyc_dashboard": {"compliance_lead", "admin"},
     "refund_dashboard": {"support_lead", "finance", "pm", "engineer", "compliance_lead", "admin"},
     "approvals_view": {"support_lead", "finance", "admin"},
@@ -812,6 +814,30 @@ def kyc_dashboard():
         median_hours=[median(x) for x in review_hours],
         breach_pct=[round(100 * b / m) if m else 0 for b, m in zip(breaches, manual)],
         reviewers=reviewers, summary=summary)
+
+
+@app.route("/ask", methods=["GET", "POST"])
+def ask_data():
+    require("ask_data")
+    tables = ask.allowed_tables(can)
+    question, sql, result, error = request.form.get("question", "").strip(), request.form.get("sql", "").strip(), None, None
+    if request.method == "POST":
+        try:
+            if request.form.get("mode") == "ask":
+                if not question:
+                    raise ask.QueryError("Type a question first.")
+                sql = ask.to_sql(question, ask.schema_text(g.db, tables))
+            result = ask.run(sql, tables)
+        except ask.QueryError as e:
+            error = str(e)
+        except Exception as e:
+            error = f"The AI service call failed: {e}"
+        audit(g.db, g.user["id"], "data_query", "query", 0,
+              after={"question": question or None, "sql": sql, "rows": len(result["rows"]) if result else None,
+                     "masked": result["masked"] if result else None, "error": error})
+        g.db.commit()
+    return render_template("ask.html", question=question, sql=sql, result=result, error=error,
+                           tables=sorted(tables), masked=ask.MASKED, ai=ask.provider())
 
 
 # ---------- Feature flags ----------
