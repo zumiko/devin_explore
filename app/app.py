@@ -62,8 +62,12 @@ def can(perm):
     if g.get("user") is None:
         return False
     if "perms" not in g:
-        g.perms = role_perms(g.user["role"])
+        g.perms = role_perms(g.user["role"]) - user_restrictions(g.user["id"])
     return perm in g.perms
+
+
+def user_restrictions(user_id):
+    return {r[0] for r in g.db.execute("SELECT perm FROM user_restrictions WHERE user_id = ?", (user_id,))}
 
 
 def role_perms(role):
@@ -1050,9 +1054,40 @@ def admin_access():
     for role, perm in g.db.execute("SELECT role, perm FROM role_permissions"):
         granted.setdefault(role, set()).add(perm)
     users = g.db.execute("SELECT * FROM users ORDER BY id").fetchall()
-    apps_for = {r: [a["name"] for a in APPS if a["perm"] in granted.get(r, set())] for r, _, _ in ROLES}
+    restricted = {}
+    for uid, perm in g.db.execute("SELECT user_id, perm FROM user_restrictions"):
+        restricted.setdefault(uid, set()).add(perm)
+
+    def apps(perms):
+        return [a["name"] for a in APPS if a["perm"] in perms]
     return render_template("admin_access.html", users=users, roles=ROLES, perms=PERMISSIONS, granted=granted,
-                           apps_for=apps_for, group=entra_group, locked=LOCKED)
+                           restricted=restricted, apps=apps, group=entra_group, locked=LOCKED)
+
+
+@app.route("/admin/users/<int:user_id>", methods=["GET", "POST"])
+def admin_user(user_id):
+    require("users_manage")
+    user = g.db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        abort(404)
+    group_perms = [p for p in PERMISSIONS if p in role_perms(user["role"])]
+    before = user_restrictions(user_id)
+    if request.method == "POST":
+        if user_id == g.user["id"]:
+            flash("You can't restrict yourself. Ask another admin.", "error")
+            return redirect(url_for("admin_user", user_id=user_id))
+        after = {p for p in group_perms if not request.form.get(p)}
+        if after != before:
+            g.db.execute("DELETE FROM user_restrictions WHERE user_id = ?", (user_id,))
+            g.db.executemany("INSERT INTO user_restrictions VALUES (?, ?)", [(user_id, p) for p in sorted(after)])
+            audit(g.db, g.user["id"], "user_restrictions_changed", "user", user_id,
+                  before={"name": user["name"], "restricted": sorted(before)},
+                  after={"name": user["name"], "restricted": sorted(after)}, reason=request.form.get("reason", "").strip())
+            g.db.commit()
+            flash(f"Saved restrictions for {user['name']}.")
+        return redirect(url_for("admin_access"))
+    return render_template("admin_user.html", user=user, group=entra_group(user["role"]), group_perms=group_perms,
+                           perms=PERMISSIONS, restricted=before)
 
 
 @app.post("/admin/users/<int:user_id>/role")

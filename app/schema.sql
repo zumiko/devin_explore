@@ -4,6 +4,12 @@ CREATE TABLE IF NOT EXISTS role_permissions (
   PRIMARY KEY (role, perm)
 );
 
+CREATE TABLE IF NOT EXISTS user_restrictions (
+  user_id INTEGER NOT NULL,
+  perm TEXT NOT NULL,
+  PRIMARY KEY (user_id, perm)
+);
+
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
