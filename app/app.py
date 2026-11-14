@@ -100,7 +100,7 @@ def access_gate_check():
 @app.route("/access", methods=["GET", "POST"])
 def access_gate():
     nxt = request.values.get("next", "/")
-    if not nxt.startswith("/") or nxt.startswith("//"):
+    if not nxt.startswith("/") or nxt.startswith("//") or "\\" in nxt:
         nxt = "/"
     error = None
     if request.method == "POST":
