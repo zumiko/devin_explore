@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from flask import Flask, Response, abort, flash, g, redirect, render_template, request, session, url_for
 
 import ask
+import devin_api
 import entra
 import face_match
 import notify
@@ -52,6 +53,8 @@ APPS = [
     {"perm": "customer_view", "endpoint": "customers", "name": "Customers", "desc": "Customer profiles and history."},
     {"perm": "audit_view", "endpoint": "audit_log", "name": "Audit log", "desc": "Who changed what, when, and why."},
     {"perm": "settings_view", "endpoint": "settings", "name": "Rules", "desc": "Thresholds and limits the apps enforce."},
+    {"perm": "change_request", "endpoint": "change_requests", "name": "Change requests",
+     "desc": "Ask for a change to these tools. Admin approves, Devin builds it, an engineer reviews."},
     {"perm": "users_manage", "endpoint": "admin_access", "name": "Users & access", "desc": "Who has which role and what each role can do."},
     {"perm": "ask_data", "endpoint": "ask_data", "name": "Ask the data", "desc": "Questions in plain English, within your access."},
 ]
@@ -250,6 +253,13 @@ def index():
     my_refunds = db.execute(
         "SELECT r.*, c.name FROM refunds r JOIN customers c ON c.id = r.customer_id WHERE r.requested_by = ?"
         " ORDER BY r.created_at DESC LIMIT 8", (g.user["id"],)).fetchall() if can("refund_request") else []
+    my_requests = db.execute("SELECT * FROM change_requests WHERE requester_id = ? AND status != 'done'"
+                             " ORDER BY status = 'live' DESC, updated_at DESC", (g.user["id"],)).fetchall()
+    waiting = (["submitted"] if can("change_approve") else []) + (
+        ["approved", "building", "pr_open"] if can("change_ship") else [])
+    review_requests = db.execute(
+        f"SELECT * FROM change_requests WHERE status IN ({','.join('?' * len(waiting))}) ORDER BY updated_at",
+        waiting).fetchall() if waiting else []
     my_flags = db.execute("SELECT * FROM feature_flags WHERE owner_id = ? ORDER BY key",
                           (g.user["id"],)).fetchall() if can("flag_view") else []
     unassigned = db.execute(
@@ -269,7 +279,8 @@ def index():
             f"SELECT u.name, COUNT(*) AS open, SUM(k.sla_due_at < ?) AS overdue FROM kyc_cases k JOIN users u ON u.id = k.assigned_to"
             f" WHERE k.status IN {OPEN_KYC} GROUP BY u.id ORDER BY open DESC", (now_iso(),)).fetchall()
     return render_template("index.html", stats=stats, my_cases=my_cases, team=team, unassigned=unassigned, now=now_iso(), approvals=approvals, my_refunds=my_refunds,
-                           my_flags=my_flags, apps=[a for a in APPS if can(a["perm"])])
+                           my_flags=my_flags, my_requests=my_requests, review_requests=review_requests,
+                           cr_labels=CR_STATUS, apps=[a for a in APPS if can(a["perm"])])
 
 
 # ---------- KYC ----------
@@ -1062,6 +1073,122 @@ def admin_access():
         return [a["name"] for a in APPS if a["perm"] in perms]
     return render_template("admin_access.html", users=users, roles=ROLES, perms=PERMISSIONS, granted=granted,
                            restricted=restricted, apps=apps, group=entra_group, locked=LOCKED)
+
+
+CR_STATUS = {
+    "submitted": "Waiting for admin approval",
+    "declined": "Declined",
+    "approved": "Approved, Devin not connected",
+    "building": "Devin is building it",
+    "pr_open": "Code ready, waiting for engineer review",
+    "live": "Live, waiting for requester to confirm",
+    "done": "Done",
+}
+
+
+def load_request(req_id):
+    req = g.db.execute("SELECT c.*, u.name AS requester, u.role AS requester_role, u.team AS requester_team,"
+                       " a.name AS approver FROM change_requests c JOIN users u ON u.id = c.requester_id"
+                       " LEFT JOIN users a ON a.id = c.approver_id WHERE c.id = ?", (req_id,)).fetchone()
+    if not req:
+        abort(404)
+    if req["requester_id"] != g.user["id"] and not (can("change_approve") or can("change_ship")):
+        abort(403)
+    return req
+
+
+def set_request(req, status, action, reason=None, **fields):
+    fields.update(status=status, updated_at=now_iso())
+    g.db.execute(f"UPDATE change_requests SET {', '.join(f'{k} = ?' for k in fields)} WHERE id = ?",
+                 (*fields.values(), req["id"]))
+    audit(g.db, g.user["id"], action, "change_request", req["id"], before={"status": req["status"]},
+          after={k: v for k, v in fields.items() if k not in ("prompt", "updated_at")}, reason=reason)
+    g.db.commit()
+
+
+@app.route("/requests")
+def change_requests():
+    require("change_request")
+    everyone = can("change_approve") or can("change_ship")
+    rows = g.db.execute("SELECT c.*, u.name AS requester FROM change_requests c JOIN users u ON u.id = c.requester_id"
+                        + ("" if everyone else " WHERE c.requester_id = ?") + " ORDER BY c.updated_at DESC",
+                        () if everyone else (g.user["id"],)).fetchall()
+    return render_template("change_requests.html", rows=rows, everyone=everyone, labels=CR_STATUS)
+
+
+@app.route("/requests/new", methods=["GET", "POST"])
+def change_request_new():
+    require("change_request")
+    if request.method == "POST":
+        title, details = request.form.get("title", "").strip(), request.form.get("details", "").strip()
+        if not title or not details:
+            flash("Give the request a title and describe what you need.", "error")
+            return render_template("change_request_new.html", form=request.form)
+        ts = now_iso()
+        cur = g.db.execute("INSERT INTO change_requests (requester_id, title, details, created_at, updated_at)"
+                           " VALUES (?, ?, ?, ?, ?)", (g.user["id"], title, details, ts, ts))
+        audit(g.db, g.user["id"], "change_requested", "change_request", cur.lastrowid, after={"title": title})
+        g.db.commit()
+        flash("Sent to the admin for approval.")
+        return redirect(url_for("change_request", req_id=cur.lastrowid))
+    return render_template("change_request_new.html", form={})
+
+
+@app.route("/requests/<int:req_id>", methods=["GET", "POST"])
+def change_request(req_id):
+    require("change_request")
+    req = load_request(req_id)
+    if request.method == "POST":
+        action, note = request.form.get("action"), request.form.get("note", "").strip()
+        mine = req["requester_id"] == g.user["id"]
+        if action in ("approve", "decline") and can("change_approve") and req["status"] == "submitted":
+            if action == "decline":
+                set_request(req, "declined", "change_declined", note, approver_id=g.user["id"], approver_note=note)
+            else:
+                requester = g.db.execute("SELECT * FROM users WHERE id = ?", (req["requester_id"],)).fetchone()
+                prompt = devin_api.prompt_for(req, requester, note)
+                fields = dict(approver_id=g.user["id"], approver_note=note, prompt=prompt)
+                if devin_api.configured():
+                    try:
+                        s = devin_api.start(prompt, f"Change request #{req['id']}: {req['title']}")
+                    except Exception as e:
+                        flash(f"Couldn't start Devin: {e}", "error")
+                        return redirect(url_for("change_request", req_id=req_id))
+                    set_request(req, "building", "change_approved", note, devin_session_id=s["session_id"],
+                                devin_url=s["url"], **fields)
+                    flash("Approved. Devin is building it.")
+                else:
+                    set_request(req, "approved", "change_approved", note, **fields)
+                    flash("Approved. Devin isn't connected, so the request it would get is shown below.")
+        elif action == "refresh" and req["devin_session_id"] and req["status"] in ("building", "pr_open"):
+            try:
+                s = devin_api.status(req["devin_session_id"])
+            except Exception as e:
+                flash(f"Couldn't reach Devin: {e}", "error")
+                return redirect(url_for("change_request", req_id=req_id))
+            if s["pr_url"] and s["pr_url"] != req["pr_url"]:
+                set_request(req, "pr_open", "change_pr_opened", pr_url=s["pr_url"])
+            flash(f"Devin session: {s['status'] or 'unknown'}." + ("" if s["pr_url"] else " No PR yet."))
+        elif action == "live" and can("change_ship") and req["status"] in ("approved", "building", "pr_open"):
+            set_request(req, "live", "change_live", note, **({"pr_url": request.form["pr_url"].strip()}
+                                                             if request.form.get("pr_url", "").strip() else {}))
+            flash(f"Marked live. {req['requester'].split()[0]} will see it on their home page to confirm.")
+        elif action in ("confirm", "reopen") and mine and req["status"] == "live":
+            if action == "confirm":
+                set_request(req, "done", "change_confirmed", note)
+                flash("Thanks, closed.")
+            else:
+                set_request(req, "submitted", "change_reopened", note,
+                            details=req["details"] + f"\n\nReopened by {g.user['name']}: {note or '(no reason given)'}")
+                flash("Reopened and sent back to the admin.")
+        else:
+            abort(403)
+        return redirect(url_for("change_request", req_id=req_id))
+    history = g.db.execute("SELECT a.*, u.name AS actor FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id"
+                           " WHERE entity_type = 'change_request' AND entity_id = ? ORDER BY ts, a.id",
+                           (req_id,)).fetchall()
+    return render_template("change_request.html", req=req, labels=CR_STATUS, history=history,
+                           devin_on=devin_api.configured(), repo=devin_api.REPO)
 
 
 @app.route("/admin/users/<int:user_id>", methods=["GET", "POST"])

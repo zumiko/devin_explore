@@ -98,8 +98,9 @@ def migrate():
         if col not in [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
     conn.executemany("INSERT OR IGNORE INTO settings VALUES (?, ?, ?)", SETTINGS)
-    if not conn.execute("SELECT 1 FROM role_permissions LIMIT 1").fetchone():
-        conn.executemany("INSERT INTO role_permissions VALUES (?, ?)", access.default_rows())
+    known = {r[0] for r in conn.execute("SELECT DISTINCT perm FROM role_permissions")}
+    conn.executemany("INSERT INTO role_permissions VALUES (?, ?)",
+                     [(r, p) for r, p in access.default_rows() if p not in known])
     conn.commit()
     conn.close()
 
@@ -194,6 +195,18 @@ def build(db_path=DB_PATH):
         conn.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?)", (uid, name, email, role, team))
     conn.executemany("INSERT INTO settings VALUES (?, ?, ?)", SETTINGS)
     conn.executemany("INSERT INTO role_permissions VALUES (?, ?)", access.default_rows())
+    for rid, uid, title, details, status, days in (
+        (1, 3, "Add a 'source of funds' field to KYC cases",
+         "For customers flagged high risk, reviewers should record where the money comes from (salary, business, "
+         "savings, other) with a free-text note. Required before approving a high-risk case.", "submitted", 1),
+        (2, 8, "Show the refund limit next to the refund amount box",
+         "Agents keep submitting refunds just over the auto-approve limit without realising it needs sign-off. "
+         "Show the current limit under the amount field.", "done", 9),
+    ):
+        ts = (now - timedelta(days=days)).isoformat()
+        conn.execute("INSERT INTO change_requests (id, requester_id, title, details, status, approver_id, created_at,"
+                     " updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                     (rid, uid, title, details, status, 11 if status == "done" else None, ts, ts))
     for i, w in enumerate(WATCHLIST, 1):
         conn.execute("INSERT INTO watchlist VALUES (?, ?, ?, ?, ?, ?)", (i, *w))
 

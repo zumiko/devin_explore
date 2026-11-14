@@ -18,6 +18,7 @@
     {% if can('customer_view') %}<a href="{{ url_for('customers') }}">Customers</a>{% endif %}
     {% if can('audit_view') %}<a href="{{ url_for('audit_log') }}">Audit Log</a>{% endif %}
     {% if can('settings_view') %}<a href="{{ url_for('settings') }}">Rules</a>{% endif %}
+    {% if can('change_request') %}<a href="{{ url_for('change_requests') }}">Change requests</a>{% endif %}
     {% if can('users_manage') %}<a href="{{ url_for('admin_access') }}">Users &amp; Access</a>{% endif %}
     {% if can('ask_data') %}<a href="{{ url_for('ask_data') }}">Ask the data</a>{% endif %}
     {% if can('kyc_work') %}<a href="{{ url_for('signup') }}" target="_blank">Customer signup &#8599;</a>{% endif %}

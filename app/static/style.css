@@ -71,3 +71,9 @@ form.row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
 .app span { color: #6b7280; font-size: 13px; }
 .matrix th { font-size: 12px; }
 .center { text-align: center; }
+a.button { display: inline-block; background: #2563eb; color: #fff; padding: 7px 14px; border-radius: 6px; text-decoration: none; }
+div.row { display: flex; gap: 10px; }
+ol.steps { display: flex; gap: 6px; list-style: none; padding: 0; flex-wrap: wrap; }
+ol.steps li { padding: 4px 10px; border-radius: 12px; background: #eef0f3; color: #666; }
+ol.steps li.done { background: #dcfce7; color: #166534; }
+ol.steps li.current { background: #2563eb; color: #fff; }

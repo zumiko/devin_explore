@@ -4,6 +4,23 @@ CREATE TABLE IF NOT EXISTS role_permissions (
   PRIMARY KEY (role, perm)
 );
 
+CREATE TABLE IF NOT EXISTS change_requests (
+  id INTEGER PRIMARY KEY,
+  requester_id INTEGER NOT NULL REFERENCES users(id),
+  title TEXT NOT NULL,
+  details TEXT NOT NULL,
+  -- submitted, declined, approved (Devin not connected), building, pr_open, live, done
+  status TEXT NOT NULL DEFAULT 'submitted',
+  approver_id INTEGER REFERENCES users(id),
+  approver_note TEXT,
+  prompt TEXT,
+  devin_session_id TEXT,
+  devin_url TEXT,
+  pr_url TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS user_restrictions (
   user_id INTEGER NOT NULL,
   perm TEXT NOT NULL,

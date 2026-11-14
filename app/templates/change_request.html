@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+{% block content %}
+<p><a href="{{ url_for('change_requests') }}">&larr; Change requests</a></p>
+<h1>#{{ req.id }} {{ req.title }}</h1>
+<p class="muted">From {{ req.requester }} ({{ req.requester_team }}) · {{ req.created_at|dt }} · <b>{{ labels[req.status] }}</b></p>
+<ol class="steps small">
+  {% set order = ['submitted', 'approved', 'pr_open', 'live', 'done'] %}
+  {% set at = {'building': 'approved', 'declined': 'submitted'}.get(req.status, req.status) %}
+  {% for s, label in [('submitted', 'Requested'), ('approved', 'Admin approved, Devin builds'), ('pr_open', 'Engineer reviews the PR'), ('live', 'Live'), ('done', 'Requester confirms')] %}
+  <li class="{{ 'done' if order.index(s) < order.index(at) or req.status == 'done' else ('current' if s == at else '') }}">{{ label }}</li>
+  {% endfor %}
+</ol>
+<div class="card"><p style="white-space: pre-wrap">{{ req.details }}</p></div>
+
+{% if req.approver %}<p>{{ 'Declined' if req.status == 'declined' else 'Approved' }} by {{ req.approver }}{% if req.approver_note %}: "{{ req.approver_note }}"{% endif %}</p>{% endif %}
+{% if req.devin_url %}<p>Devin session: <a href="{{ req.devin_url }}" target="_blank">{{ req.devin_url }}</a></p>{% endif %}
+{% if req.pr_url %}<p>Pull request: <a href="{{ req.pr_url }}" target="_blank">{{ req.pr_url }}</a></p>{% endif %}
+
+{% if req.status == 'submitted' and can('change_approve') %}
+<h2>Approve?</h2>
+<p class="muted">Approving {% if devin_on %}starts a Devin session that opens a pull request on {{ repo }}{% else %}would start a Devin session (not connected in this demo, so you'll see the exact request instead){% endif %}. Nothing goes live until an engineer reviews and merges it.</p>
+<form method="post" class="stack narrow">
+  <label>Note for Devin and the requester (optional)<input name="note" placeholder="e.g. Only for high-risk cases; don't touch the signup page"></label>
+  <div class="row"><button name="action" value="approve">Approve and send to Devin</button>
+  <button name="action" value="decline" class="secondary">Decline</button></div>
+</form>
+{% endif %}
+
+{% if req.status in ('building', 'pr_open') and req.devin_session_id %}
+<form method="post"><button name="action" value="refresh" class="secondary">Check Devin for a PR</button></form>
+{% endif %}
+
+{% if req.status in ('approved', 'building', 'pr_open') and can('change_ship') %}
+<h2>Ship it</h2>
+<p class="muted">Review the pull request, merge it, and once it's deployed mark it live so {{ req.requester.split()[0] }} can check it.</p>
+<form method="post" class="stack narrow">
+  {% if not req.pr_url %}<label>Pull request link<input name="pr_url" placeholder="https://github.com/{{ repo }}/pull/..."></label>{% endif %}
+  <label>Note (optional)<input name="note" placeholder="e.g. Deployed 2pm"></label>
+  <button name="action" value="live">Merged and live</button>
+</form>
+{% endif %}
+
+{% if req.status == 'live' and req.requester_id == me.id %}
+<h2>Does it do what you asked?</h2>
+<form method="post" class="stack narrow">
+  <label>Comment (needed if it's not right)<input name="note"></label>
+  <div class="row"><button name="action" value="confirm">Yes, close it</button>
+  <button name="action" value="reopen" class="secondary">No, reopen</button></div>
+</form>
+{% endif %}
+
+{% if req.prompt %}
+<details {% if not req.devin_url %}open{% endif %}><summary>Request sent to Devin{% if not req.devin_url %} (would be sent once Devin is connected){% endif %}</summary>
+<pre class="small" style="white-space: pre-wrap">{{ req.prompt }}</pre></details>
+{% endif %}
+
+<h2>History</h2>
+<table class="small">
+  {% for h in history %}<tr><td>{{ h.ts|dt }}</td><td>{{ h.actor }}</td><td>{{ h.action|replace('change_', '')|replace('_', ' ') }}</td><td>{{ h.reason or '' }}</td></tr>{% endfor %}
+</table>
+{% endblock %}

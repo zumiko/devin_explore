@@ -47,3 +47,9 @@ python app/app.py     # http://localhost:5000
 ```
 
 "Reset demo data" on the home page regenerates the database.
+
+## Change requests
+
+`/requests`: people with `change_request` (leads, finance, PM, seniors) describe a change they need. The admin approves or declines it (`change_approve`). Approval starts a Devin session through the Devin API that opens a PR against `CHANGE_BASE_BRANCH` on `CHANGE_REPO`. An engineer (`change_ship`) reviews and merges it, then marks it live, and the requester confirms it or reopens it. Every step is in the audit log.
+
+Set `DEVIN_API_KEY` to have approvals start real sessions. Without it, the request page shows the exact prompt Devin would have received.

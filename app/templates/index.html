@@ -75,6 +75,21 @@
   {% for r in my_refunds %}<tr><td><a href="{{ url_for('refund_detail', refund_id=r.id) }}">{{ r.name }}</a></td><td>{{ r.amount_cents|money }}</td><td>{{ r.reason|label }}</td><td>{{ r.status|label }}</td><td>{{ r.created_at|dt }}</td></tr>{% endfor %}
 </table>
 {% endif %}
+{% if review_requests %}
+<h2>Change requests waiting on you</h2>
+<table>
+  <tr><th>Request</th><th>Status</th><th>Updated</th></tr>
+  {% for r in review_requests %}<tr><td><a href="{{ url_for('change_request', req_id=r.id) }}">#{{ r.id }} {{ r.title }}</a></td><td>{{ cr_labels[r.status] }}</td><td>{{ r.updated_at|dt }}</td></tr>{% endfor %}
+</table>
+{% endif %}
+{% if my_requests %}
+<h2>My change requests</h2>
+<table>
+  <tr><th>Request</th><th>Status</th><th>Updated</th></tr>
+  {% for r in my_requests %}<tr><td><a href="{{ url_for('change_request', req_id=r.id) }}">#{{ r.id }} {{ r.title }}</a></td>
+    <td>{% if r.status == 'live' %}<b>Live now: check it and confirm</b>{% else %}{{ cr_labels[r.status] }}{% endif %}</td><td>{{ r.updated_at|dt }}</td></tr>{% endfor %}
+</table>
+{% endif %}
 {% if my_flags %}
 <h2>Flags I own</h2>
 <table>
