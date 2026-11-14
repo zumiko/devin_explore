@@ -55,5 +55,5 @@ def start(prompt, title):
 def status(session_id):
     r = _call("GET", f"/v3/organizations/{ORG_ID}/sessions/{session_id}" if _v3() else f"/v1/session/{session_id}")
     pr = (r.get("pull_request") or {}).get("url") or next(
-        (p.get("url") for p in r.get("pull_requests") or [] if p.get("url")), None)
+        (p.get("pr_url") or p.get("url") for p in r.get("pull_requests") or [] if p.get("pr_url") or p.get("url")), None)
     return {"status": r.get("status_enum") or r.get("status"), "pr_url": pr}
