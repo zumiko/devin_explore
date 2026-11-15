@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
 {% block content %}
 <h1>No access</h1>
-<p>{{ me.name }} ({{ me.role|label }}) doesn't have permission to see this page. Switch people in the top right.</p>
+<p>{% if me %}{{ me.name }} ({{ me.role|label }}) doesn't have permission to see this page. Switch people in the top right.{% else %}You need to sign in to see this page.{% endif %}</p>
 {% endblock %}
