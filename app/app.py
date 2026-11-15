@@ -139,6 +139,9 @@ def load_user():
     uid = session.get("user_id", None if g.sso else 1)
     g.user = g.db.execute("SELECT * FROM users WHERE id = ?", (uid,)).fetchone() if uid else None
     g.users = [] if g.sso else g.db.execute("SELECT * FROM users ORDER BY id").fetchall()
+    if g.user is None and not g.sso and g.users:
+        g.user = g.users[0]
+        session["user_id"] = g.user["id"]
     if g.user is None and request.endpoint not in PUBLIC_ENDPOINTS:
         if g.sso:
             return redirect(url_for("login", next=request.full_path))
